@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 生成的小地图图片
+data process/maps/
+
+# 临时探针/调试脚本
+data process/_*.py
+
+# 编辑器/系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
