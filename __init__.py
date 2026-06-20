@@ -18,6 +18,7 @@ from plugin.sdk.plugin import (
     neko_plugin,
     plugin_entry,
     lifecycle,
+    ui,
     Ok,
     Err,
     SdkError,
@@ -165,7 +166,26 @@ class NekoWarthunderPlugin(NekoPluginBase):
         except Exception:  # noqa: BLE001
             pass
 
+    # -------------------------------------------------------------- Hosted UI
+    @ui.context(id="dashboard", title="战雷猫娘副驾驶")
+    async def dashboard_context(self):
+        with self._state_lock:
+            s = self.state
+        return {
+            "enabled": self.cfg.enabled,
+            "dry_run": self.cfg.dry_run,
+            "connected": s.connected,
+            "conn_state": s.conn_state,
+            "in_battle": s.in_battle,
+            "domain": s.domain,
+            "vehicle_type": s.vehicle_type,
+            "scenario": s.scenario,
+            "level": s.level,
+            "safety": self.safety.snapshot(),
+        }
+
     # ------------------------------------------------------------------ 动作
+    @ui.action(id="set_dry_run", label="设置 dry_run", tone="primary", group="runtime", order=10, refresh_context=True)
     @plugin_entry(
         id="set_dry_run",
         name="设置 dry_run",
@@ -176,16 +196,19 @@ class NekoWarthunderPlugin(NekoPluginBase):
         self.cfg.dry_run = bool(value)
         return Ok({"dry_run": self.cfg.dry_run})
 
+    @ui.action(id="pause", label="急停", tone="danger", group="runtime", order=20, refresh_context=True)
     @plugin_entry(id="pause", name="急停", description="暂停所有提醒输出。")
     def pause(self, **_):
         self.safety.pause()
         return Ok({"safety": self.safety.status()})
 
+    @ui.action(id="resume", label="恢复", tone="success", group="runtime", order=30, refresh_context=True)
     @plugin_entry(id="resume", name="恢复", description="恢复提醒输出并清空安全计数。")
     def resume(self, **_):
         self.safety.resume()
         return Ok({"safety": self.safety.status()})
 
+    @ui.action(id="test_say", label="测试开口", tone="info", group="diagnostics", order=40, refresh_context=False)
     @plugin_entry(
         id="test_say",
         name="测试开口",

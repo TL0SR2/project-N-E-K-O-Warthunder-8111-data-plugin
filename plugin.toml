@@ -18,6 +18,16 @@ supported = ">=0.1.0,<0.3.0"
 default_locale = "zh-CN"
 locales_dir = "i18n"
 
+[plugin.ui]
+enabled = true
+
+[[plugin.ui.panel]]
+id = "main"
+title = "战雷猫娘副驾驶"
+entry = "ui/panel.tsx"
+context = "dashboard"
+permissions = ["state:read", "action:call"]
+
 [plugin_runtime]
 enabled = true
 auto_start = false
