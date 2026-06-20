@@ -22,7 +22,7 @@
 - 完整环境：`uv run pytest plugin/plugins/neko_warthunder/tests`
 - 接缝自检：`test_say` 动作（验①③）/ `tests/test_real_sample.py`（验②）/ `docs/真机验证-checklist.md`
 
-待办：① T4 补集成测试；② 3 个接缝真机验证（见 checklist）；③ T3/L8 子进程编排；④ M3 去桩（overspeed/you_killed 需数据层 flag + player_name）→ M4 真机调参终验。
+待办：① T4 补集成测试；② T-Safety output text sanitizer；③ 3 个接缝真机验证（见 checklist）；④ T3/L8 子进程编排；⑤ M3 去桩（overspeed/you_killed 需数据层 flag + player_name，kill/death/hudmsg/combat.feed 正式播报需先完成 T-Safety）→ M4 真机调参终验。
 
 ---
 
@@ -34,6 +34,7 @@
    - 数据层与我们唯一边界 = HTTP `:8112`（`/api/telemetry`）。我们**只消费**，不重算阈值。
    - **不修改合作者文件夹任何内容**（vendored，整包替换式更新）。其目录 `data process` 带空格，**绝不当 Python 模块 import**。
    - 输出**只走** `neko_dispatcher`（唯一出口）；Detector / Scenario / Arbiter **不得**直接 `push_message`。
+   - 不可信自由文本只允许在 `neko_dispatcher` / prompt builder 前完成 sanitize 后进入 prompt；raw 玩家名、hudmsg、combat.feed 原文只进 audit/debug。
    - **每次仲裁至多 1 条**输出。
    - 我们这层**不拼最终台词**：产出"事实行 + 要求行" prompt，口吻交角色 LLM（`ai_behavior="respond"`）。
 4. **dry_run 默认开**：全链路跑、最后一步短路不真投；真机调参确认后才关。
@@ -45,6 +46,7 @@
 - **数据层阻塞项**（这些事件先打桩/标 TODO，待合作者补齐再接线）：
   - `overspeed`：等数据层 `overspeed_warn/critical` flag。
   - `you_killed` / `you_died`：等 hudmsg/击杀解析稳定 + `player_name` 注入。
+- **输出安全阻塞项**：`kill` / `death` / `hudmsg` / `combat.feed` 正式播报前必须完成 `T-Safety: output text sanitizer`。数据层继续保留 raw fact，不负责输出安全；Detector / Scenario / Arbiter 不承担文本过滤职责；数值安全事件（`stall_risk` / `low_alt_danger` / `overheat` / `low_fuel`）不被 T-Safety 阻塞。
 - **可立即实现（6 事件 + 全框架）**：`stall_risk`、`overheat`、`low_fuel`、`low_alt_danger`、`spawn`、`battle_end`。
 
 ## 2. 结构（✅ 已落地，下方即当前真实目录）
@@ -161,6 +163,7 @@ plugin/plugins/neko_warthunder/
 - **Detector 单测**：给每个 detector 喂合成信号序列，断言边沿/去重/迟滞/re-arm（参照 neko_roast `test_live_events`）。
 - **Arbiter 序列测试**：多事件同窗序列 → 断言择优/抢占/门控/≤1 条。
 - **Scenario 测试**：状态转移用例 + grace。
+- **T-Safety 测试**：sanitizer 单测；`NekoDispatcher.build_prompt` 只使用 safe 字段；kill/death/hudmsg/combat.feed integration 覆盖 redacted 后仍可播 generic 文案；`push_message.parts[].text` 不包含 unsafe raw 的合同测试；dry_run 能解释 `redacted_reason` / `text_safety_level`。
 - **语料回归**：真机抓包当 G2/G3 回归样本。
 - **CLI check**：`uv run python -m plugin.neko_plugin_cli.cli check plugin/plugins/neko_warthunder`（0 error）。
 - **无依赖逻辑自检**：`uv run python plugin/plugins/neko_warthunder/tests/run_logic_tests.py`（不需 NEKO 环境；当前 **29/29 过**）。
@@ -184,14 +187,15 @@ plugin/plugins/neko_warthunder/
 ### Codex 现在就能做（不阻塞）
 
 - **T1A Hosted UI Integration / T1B Minimal Panel ✅ 已完成**：`plugin.toml` surface、`dashboard` context、`set_dry_run`/`pause`/`resume`/`test_say` action、`ui/panel.tsx` 最小面板已接入；surface/context/action smoke 已通过。
-- **T4 补测试（下一步）**：`DetectorEngine.feed` 全链路 integration、`NekoDispatcher.build_prompt` 各事件、scenario 多 tick 序列。
+- **T4 补测试（已完成一轮，后续随功能继续补）**：`DetectorEngine.feed` 全链路 integration、`NekoDispatcher.build_prompt` 各事件、scenario 多 tick 序列。
+- **T-Safety: output text sanitizer**：轻量 Text Sanitizer / Output Safety Filter，放在 `NekoDispatcher` / prompt builder 前。目标是防止猫娘复读不良玩家 ID、`hudmsg`、`combat.feed` 原文；raw 只进 audit/debug，safe 才能进 prompt；默认使用"一名敌人/对手/某位玩家"等 generic 文案，不朗读陌生玩家名；不确定时宁可不读原文。不做复杂 NLP，不做大模型审核。它阻塞 kill/death/hudmsg/combat.feed 正式播报，但不阻塞 stall/low_alt/overheat/low_fuel 等数值安全事件。实现前先补 sanitizer 单测、dispatcher prompt 测试、integration 测试、`push_message` prompt 不包含 unsafe raw 的合同测试。
 - **T2 recovery 事件**：把生死级 detector 的 `wants_recovery=True`（在 `detectors/condition/flight_safety.py` 给 `stall_risk`/`low_alt_danger`）。recovery 走限流通道、低优先级、可被丢（D-B4）；intent 已在 `neko_dispatcher._RECOVERY_INTENT`。
 - **T3 L8 子进程编排**：插件 `startup` 尽力 `subprocess` 拉起 `data_layer/data process/wt_server.py`（**路径含空格要加引号**，带 `--player-name`），或检测 `:8112` 已在跑；连不上降级 + `status` 提示。**只当外部进程，绝不 import 数据层。**
 
 ### 需要人/真机（Codex 做不了，等）
 
 - **T5 三接缝验证**：见 `docs/真机验证-checklist.md`（①加载 ②字段/flag ③push 开口）。失败按 checklist 改对应单文件（`plugin.toml`/`__init__.py` · `core/flag_codes.py`/`adapters/telemetry_client.py` · `adapters/neko_dispatcher.py`）。
-- **T6 M3 去桩**：等数据层补 `overspeed_warn/critical` flag + hudmsg/击杀解析 + `player_name` 注入。届时 overspeed / you_killed **无需改逻辑自动生效**（已写好），只需确认 flag 名/字段对得上。
+- **T6 M3 去桩**：等数据层补 `overspeed_warn/critical` flag + hudmsg/击杀解析 + `player_name` 注入。kill/death/hudmsg/combat.feed 正式播报前必须先完成 T-Safety；届时 overspeed / you_killed **无需改逻辑自动生效**（已写好），只需确认 flag 名/字段对得上。
 - **T7 真机调参**：`tools/replay.py` 灌真机帧 + dry_run 决策链路，调 `plugin.toml` 阈值/冷却/grace 与 `core/flag_codes.py`。
 
 ## 7. 已知坑 / 不要重新引入（Bugbot 已修，勿回退）

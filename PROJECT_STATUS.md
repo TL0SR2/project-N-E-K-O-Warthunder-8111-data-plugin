@@ -22,7 +22,9 @@
 - Real-machine/data-layer seams are not validated.
 - Data-layer blockers are not resolved.
 - Data-layer subprocess orchestration is not implemented.
+- `T-Safety: output text sanitizer` is planned but not implemented yet.
 - M3 event unstubbing is waiting on data-layer support for overspeed flags, HUD/combat parsing, and stable `player_name`.
+- Kill/death/hudmsg/combat.feed real speech is blocked on T-Safety; numeric flight-safety events such as stall, low altitude, overheat, and low fuel are not blocked by it.
 - `contract/telemetry_sample.json` is still waiting for a real `/api/telemetry` capture.
 - i18n currently has only a `zh-CN` placeholder; full 8-locale coverage is expected when future panel copy expands.
 
@@ -40,7 +42,8 @@ The real-machine checklist is in `docs/真机验证-checklist.md`.
 ## Next Recommended Work
 
 1. Add T4 integration tests for `DetectorEngine.feed`, dispatcher prompt building, and scenario multi-tick sequences.
-2. Keep T3/L8 data-layer subprocess orchestration for a later runtime pass.
-3. Run the remaining real-machine/data-layer/real-speech seams from `docs/真机验证-checklist.md` when the environment is available.
-4. Capture `contract/telemetry_sample.json` from a real `/api/telemetry` response.
-5. Unstub overspeed and kill/death handling after the data layer provides the missing fields.
+2. Add `T-Safety: output text sanitizer` before formal kill/death/hudmsg/combat.feed speech.
+3. Keep T3/L8 data-layer subprocess orchestration for a later runtime pass.
+4. Run the remaining real-machine/data-layer/real-speech seams from `docs/真机验证-checklist.md` when the environment is available.
+5. Capture `contract/telemetry_sample.json` from a real `/api/telemetry` response.
+6. Unstub overspeed and kill/death handling after the data layer provides the missing fields and T-Safety is in place.
