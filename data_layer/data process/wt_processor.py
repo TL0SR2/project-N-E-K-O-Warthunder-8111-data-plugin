@@ -151,6 +151,8 @@ class TelemetryProcessor:
                 "fuel_critical_fraction": 0.15,
                 "stall_warn_kmh": 300,
                 "stall_critical_kmh": 250,
+                "overspeed_warn_kmh": 750,
+                "overspeed_critical_kmh": 850,
                 "aoa_warn_deg": 14,
                 "aoa_critical_deg": 18,
                 "altitude_warn_m": 200,
@@ -222,9 +224,16 @@ class TelemetryProcessor:
             # 失速 / 攻角 / 高度 / 发动机温度：仅对固定翼有意义
             if vehicle_class == "air":
                 self._process_engine_temp(indicators, cfg, result)
-                gear = getattr(indicators, "gears", None)
+                # 超速不受起落架抑制（放起落架/襟翼时更易超速撕裂，反而更危险）
+                self._process_overspeed(vehicle, cfg, result)
+                # 起落架放下 = 起降构型（低空低速是有意为之），抑制失速/迎角/低高度告警，
+                # 避免着陆补给/起飞滑跑时刷假警。优先用可靠的 gear_state（指示灯归并），
+                # 因为部分机型（实测 J-15T）原始 gears 恒为 0.5，> 0.5 判据永不成立。
+                gear_state = getattr(indicators, "gear_state", None)
+                gears = getattr(indicators, "gears", None)
                 gear_down = bool(cfg.get("suppress_when_gear_down")) and (
-                    gear is not None and gear > 0.5
+                    gear_state == "down"
+                    or (gear_state is None and gears is not None and gears > 0.5)
                 )
                 if not gear_down:
                     self._process_stall(vehicle, cfg, result)
@@ -476,6 +485,41 @@ class TelemetryProcessor:
         result.g_now = round(g, 2)
         result.g_max = round(self._g_max, 2)
         result.g_min = round(self._g_min, 2)
+
+    def _process_overspeed(self, vehicle: Any, cfg: dict[str, Any], result: ProcessedData) -> None:
+        """超速告警：IAS 超过结构限速，或（喷气机）马赫超过压缩限制。
+
+        两个判据取「或」：任一超限即告警。IAS 阈值对所有飞机通用；马赫阈值仅在
+        profile 配了 overspeed_*_mach 时才参与（一般给喷气机）。与失速不同，**放起落架/
+        襟翼时更易超速撕裂**，故本告警不受 suppress_when_gear_down 抑制。
+        """
+        ias = getattr(vehicle, "ias_kmh", None)
+        mach = getattr(vehicle, "mach", None)
+        ias_crit = cfg.get("overspeed_critical_kmh")
+        ias_warn = cfg.get("overspeed_warn_kmh")
+        mach_crit = cfg.get("overspeed_critical_mach")
+        mach_warn = cfg.get("overspeed_warn_mach")
+
+        def _hit(ias_thr: Any, mach_thr: Any) -> bool:
+            by_ias = ias is not None and ias_thr is not None and ias >= ias_thr
+            by_mach = mach is not None and mach_thr is not None and mach >= mach_thr
+            return bool(by_ias or by_mach)
+
+        def _desc() -> tuple[str, float | None]:
+            if ias is not None:
+                return f"IAS {ias:.0f} km/h", ias
+            if mach is not None:
+                return f"M {mach:.2f}", mach
+            return "", None
+
+        if _hit(ias_crit, mach_crit):
+            txt, val = _desc()
+            self._add(result, "overspeed_critical", "critical",
+                      f"速度过高，机体可能解体：{txt}", val)
+        elif _hit(ias_warn, mach_warn):
+            txt, val = _desc()
+            self._add(result, "overspeed_warn", "warning",
+                      f"速度偏高，注意结构限速：{txt}", val)
 
     def _process_stall(self, vehicle: Any, cfg: dict[str, Any], result: ProcessedData) -> None:
         ias = getattr(vehicle, "ias_kmh", None)

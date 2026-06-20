@@ -8,8 +8,17 @@ venv/
 # 生成的小地图图片
 data process/maps/
 
+# 抓包采集数据（体积大，不入库）
+data process/captures/
+
+# 服务端会话转存数据（长对局体量大，不入库）
+data process/records/
+
 # 临时探针/调试脚本
 data process/_*.py
+
+# 临时运行日志（抓包/冒烟）
+data process/*.log
 
 # 编辑器/系统
 .DS_Store

@@ -160,6 +160,12 @@ def _has_pos(obj: Any) -> bool:
     return getattr(obj, "x", None) is not None and getattr(obj, "y", None) is not None
 
 
+# 计入敌我统计的作战单位类型；bombing_point 等是任务标记，不算敌军单位
+_UNIT_TYPES = {"aircraft", "ground_model"}
+# 对地任务目标点类型 -> 中文标签
+_OBJECTIVE_TYPES = {"bombing_point": "轰炸点"}
+
+
 def analyze_situation(map_objects: list[Any], map_info: Any) -> dict[str, Any]:
     """以“自己(Player 图标)”为中心，产出态势：最近敌机、敌我距离方位等。
 
@@ -168,11 +174,19 @@ def analyze_situation(map_objects: list[Any], map_info: Any) -> dict[str, Any]:
     player = next((o for o in map_objects if getattr(o, "icon", "") == "Player"), None)
     enemies = [
         o for o in map_objects
-        if getattr(o, "faction", "") == "enemy" and _has_pos(o)
+        if getattr(o, "faction", "") == "enemy"
+        and getattr(o, "type", "") in _UNIT_TYPES
+        and _has_pos(o)
     ]
     allies = [
         o for o in map_objects
-        if getattr(o, "faction", "") == "ally" and _has_pos(o)
+        if getattr(o, "faction", "") == "ally"
+        and getattr(o, "type", "") in _UNIT_TYPES
+        and _has_pos(o)
+    ]
+    objectives = [
+        o for o in map_objects
+        if getattr(o, "type", "") in _OBJECTIVE_TYPES and _has_pos(o)
     ]
 
     result: dict[str, Any] = {
@@ -184,17 +198,45 @@ def analyze_situation(map_objects: list[Any], map_info: Any) -> dict[str, Any]:
         "nearest_air_threat": None,  # 最近的敌方飞机（来袭预警，海/陆通用）
         "air_threat_count": 0,
         "enemies": [],
+        "ground_targets": [],  # 对地任务目标点（轰炸点等），含坐标/网格，有自己时附距离方位
     }
-    if player is None or not _has_pos(player):
-        return result
+    px = py = None
+    own_heading = None
+    if player is not None and _has_pos(player):
+        px, py = player.x, player.y
+        own_heading = heading_from_vector(getattr(player, "dx", None), getattr(player, "dy", None))
+        result["player"] = {
+            "x": px, "y": py,
+            "heading_deg": round(own_heading, 1) if own_heading is not None else None,
+            "grid": grid_cell(px, py, map_info),
+        }
 
-    px, py = player.x, player.y
-    own_heading = heading_from_vector(getattr(player, "dx", None), getattr(player, "dy", None))
-    result["player"] = {
-        "x": px, "y": py,
-        "heading_deg": round(own_heading, 1) if own_heading is not None else None,
-        "grid": grid_cell(px, py, map_info),
-    }
+    # 对地任务目标点：无论是否找到自己都上报（找到自己时附距离/方位）
+    targets: list[dict[str, Any]] = []
+    for t in objectives:
+        item: dict[str, Any] = {
+            "kind": getattr(t, "type", "unknown"),
+            "label": _OBJECTIVE_TYPES.get(getattr(t, "type", ""), None),
+            "x": t.x, "y": t.y,
+            "grid": grid_cell(t.x, t.y, map_info),
+            "distance_m": None,
+            "bearing_deg": None,
+            "relative_deg": None,
+        }
+        if px is not None:
+            dist = distance_m(px, py, t.x, t.y, map_info)
+            brg = bearing_deg(px, py, t.x, t.y)
+            rel = relative_bearing(brg, own_heading)
+            item["distance_m"] = round(dist) if dist is not None else None
+            item["bearing_deg"] = round(brg, 1)
+            item["relative_deg"] = round(rel, 1) if rel is not None else None
+        targets.append(item)
+    # 有距离的按距离升序
+    targets.sort(key=lambda d: (d["distance_m"] is None, d["distance_m"] or 0))
+    result["ground_targets"] = targets
+
+    if player is None or px is None:
+        return result
 
     entries: list[dict[str, Any]] = []
     for e in enemies:
