@@ -16,6 +16,11 @@
 其中 fast 组兼任“在线/战局”状态探针：只有它判定为 IN_BATTLE 时，其余各组才会真正发起请求；
 离开战局时自动清空与本局相关的缓存（地图、HUD、聊天等），避免前端读到过期数据。
 
+回放(战斗录像回放)降级：回放时 8111 仍报 IN_BATTLE，但镜头在各载具间切换、击杀会随
+时间轴跳转被重复上报、mission 直接给终局结果——数据语义不可靠。fast 组据此自动识别回放
+（game_time_sec 倒退 或 进局后 mission 始终非 running），一旦命中即整局降级：所有接口仅
+返回 {"replay": true, ...}，停掉告警/战绩/态势/嘉奖等全部派生上报，直到离开战局复位。
+
 对外接口（GET）：
     /                  健康检查 + 各组刷新状态
     /api/telemetry     最新完整快照（JSON）
@@ -23,13 +28,17 @@
     /api/indicators    座舱原始仪表
     /api/map_objects   地图物体数组
     /api/map_info      地图坐标换算参数
-    /api/hud           累积的最近 HUD 事件
+    /api/hud           累积的最近 HUD 事件（原始）
+    /api/notices       自机技术通知（油温过高/襟翼非对称/发动机过热，结构化）
+    /api/awards        战斗嘉奖（一血/双杀/三杀/连续无伤歼敌等；含 is_mine/notable）
     /api/chat          累积的最近聊天
     /api/map.jpg       最新小地图底图（图片）
+    /api/record        数据转存调试开关（?on=1 开 / ?on=0 关 / 无参查状态），见 wt_recorder.py
 
 运行：
     python wt_server.py
     python wt_server.py --port 9000 --fast-interval 0.05 --save-map
+    python wt_server.py --record --record-interval 0.5   # 启动即转存(长对局数据收集)
 """
 
 from __future__ import annotations
@@ -43,11 +52,17 @@ import time
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
-from wt_events import KillTracker
+# set_player_name 的“无请求”哨兵（None 是合法值=清除昵称，故需独立哨兵）
+_UNSET = object()
+
+from dataclasses import asdict
+
+from wt_events import AwardTracker, KillTracker, NoticeTracker
 from wt_geo import analyze_situation
 from wt_processor import TelemetryProcessor
+from wt_recorder import SessionRecorder
 from wt_proximity import ProximityTracker, resolve_proximity_thresholds
 from wt_telemetry import DEFAULT_PORT as WT_PORT
 from wt_telemetry import (
@@ -65,6 +80,19 @@ _CONTENT_TYPE_BY_EXT = {"jpg": "image/jpeg", "png": "image/png"}
 _HUD_BUFFER = 200   # HUD 事件累积上限
 _CHAT_BUFFER = 200  # 聊天累积上限
 _PROXIMITY_BUFFER = 100  # 接近告警累积上限
+# 进入战局后的告警抑制窗口（秒）：air RB 空中生成的低速/低高度瞬态会误报失速等，
+# 刚进局这段时间没有真实紧急，统一抑制告警以免开局刷屏（不影响派生量/数值）。
+_SPAWN_SUPPRESS_SEC = 10.0
+
+# 回放(战斗录像回放)检测：回放里 8111 仍报 in_battle，但数据语义与实战完全不同——
+# 观战镜头在各载具间切换(载具/速度/油量都不属于单一玩家)、击杀会因时间跳转被重复上报、
+# mission 一进场就是终局结果。这类数据喂给前端只会制造混乱，故一旦判定为回放，
+# 整局降级为“仅上报回放模式”，停掉告警/战绩/态势/嘉奖等一切派生上报。
+# 判据(任一命中即锁定本局为回放，直到离开战局复位)：
+#   1) game_time_sec 在同一局内明显倒退（时间轴往回跳）——回放独有，实战恒单调递增；
+#   2) 进局 grace 秒后 mission_status 始终未出现 'running'，却已是终局/未定义态。
+_REPLAY_TIME_BACK_SEC = 5.0
+_REPLAY_MISSION_GRACE_SEC = 8.0
 
 
 # ---------------------------------------------------------------------------
@@ -86,13 +114,18 @@ class TelemetryService:
         map_dir: str = "maps",
         profiles_path: str | None = None,
         player_name: str | None = None,
+        recorder: SessionRecorder | None = None,
     ) -> None:
         self.client = client
         self.save_map = save_map
         self.map_dir = map_dir
         self.processor = TelemetryProcessor(profiles_path)
         self.tracker = KillTracker(player_name=player_name)
+        self.notices = NoticeTracker()
+        self.awards = AwardTracker()  # 战斗嘉奖（一血/连杀等高光/情报）
         self.proximity = ProximityTracker()
+        # 会话录制器（调试开关，默认关闭；为 None 时建一个未启动的）
+        self.recorder = recorder or SessionRecorder()
 
         # 各数据组的轮询间隔（秒）
         self.intervals = {
@@ -118,6 +151,8 @@ class TelemetryService:
         self._processed: dict[str, Any] | None = None  # 加工后的关键信息/告警
         self._situation: dict[str, Any] | None = None   # 态势(最近敌机/距离方位)
         self._combat: dict[str, Any] | None = None       # 战绩(击杀流/K-D)
+        self._notices: dict[str, Any] | None = None       # 自机技术通知(油温/襟翼等)
+        self._awards: dict[str, Any] | None = None         # 战斗嘉奖(一血/连杀等)
         self._proximity_events: deque = deque(maxlen=_PROXIMITY_BUFFER)  # 敌军接近告警流
         self._proximity_threshold: dict[str, Any] | None = None  # 当前接近距离{vs_air,vs_ground}
 
@@ -130,6 +165,19 @@ class TelemetryService:
         self._meta = {
             name: {"count": 0, "last": 0.0} for name in self.intervals
         }
+
+        # 运行时设置玩家昵称的待处理请求（由 HTTP 线程写、events 线程取用，避免跨线程改 tracker）
+        self._name_req: Any = _UNSET
+        # 进入对局待排空 hud 积压标志（fast 线程置位、events 线程消费）：
+        # 服务(重)启后游标为 0，进局首拉会带回 8111 跨局缓冲的上一局残留，需先丢弃。
+        # 初值 True：覆盖“工具启动时已在对局中”的冷启动场景。
+        self._hud_drain_pending = True
+        # 进入战局的时间戳（用于开局告警抑制窗口）；离开战局清空。
+        self._battle_entry_ts: float | None = None
+        # 回放检测：本局是否判定为录像回放（锁定式，进/出战局复位）。
+        self._replay = False
+        self._last_game_time: float | None = None  # 上一帧游戏内时间(秒)，用于倒退检测
+        self._mission_running_seen = False          # 本局 mission 是否曾出现 'running'
 
         self._running = False
         self._threads: list[threading.Thread] = []
@@ -160,6 +208,8 @@ class TelemetryService:
         self._running = False
         for th in self._threads:
             th.join(timeout=2.0)
+        if self.recorder.recording:
+            self.recorder.stop()
 
     # -- 通用轮询循环 ------------------------------------------------------
 
@@ -198,12 +248,30 @@ class TelemetryService:
             self._state = state
             self._indicators = ind
             self._vehicle = vehicle
-            self._processed = processed
             self._map_info = minfo  # grid 参数随 fast 实时刷新，供态势换算
             self._fast_ts = now
             # 离开战局 -> 清空本局缓存
             if state is not ConnectionState.IN_BATTLE and prev is ConnectionState.IN_BATTLE:
                 self._reset_battle_cache_locked()
+                self._battle_entry_ts = None
+            # 进入战局 -> 标记需排空 hud 积压（丢弃上一局/连接前的残留事件）+ 记录进局时刻
+            if state is ConnectionState.IN_BATTLE and prev is not ConnectionState.IN_BATTLE:
+                self._hud_drain_pending = True
+                self._battle_entry_ts = now
+                self._replay = False
+                self._last_game_time = None
+                self._mission_running_seen = False
+            # 回放检测（仅战局内；锁定式，命中后保持到离开战局）
+            if state is ConnectionState.IN_BATTLE and not self._replay:
+                self._detect_replay_locked(ind, now)
+            # 开局抑制窗口：进局前 _SPAWN_SUPPRESS_SEC 秒清空告警（保留派生量/数值），
+            # 压掉 air RB 空中生成的失速/低高度等瞬态假警。
+            if (processed is not None and self._battle_entry_ts is not None
+                    and now - self._battle_entry_ts < _SPAWN_SUPPRESS_SEC):
+                processed = {**processed, "alerts": [], "flags": {}}
+            self._processed = processed
+        # 录制（调试开关）：按记录间隔转存一帧快照；未开启录制时近乎零开销
+        self.recorder.offer_frame(self._build_record_frame)
 
     def _poll_map(self) -> None:
         objs = self.client.get_map_objects()
@@ -225,21 +293,53 @@ class TelemetryService:
             self._proximity_threshold = {"vs_air": thr_air, "vs_ground": thr_ground}
             for ev in prox_events:
                 self._proximity_events.append(ev)
+        # 录制：接近边沿事件增量落盘
+        if prox_events:
+            self.recorder.write_events("proximity", list(prox_events))
 
     def _poll_events(self) -> None:
+        # 先应用待处理的昵称设置（仅本线程改 tracker，避免与 HTTP 线程竞争）
+        with self._lock:
+            req = self._name_req
+            self._name_req = _UNSET
+            drain = self._hud_drain_pending
+            self._hud_drain_pending = False
+        if req is not _UNSET:
+            self.tracker.set_player_name(req)
+        # 进入对局首次轮询：排空 8111 跨局缓冲的旧事件（推进游标但不计入战绩），
+        # 并清空 tracker/notices，确保本局从干净状态起算；本周期不再继续喂入。
+        if drain:
+            dropped = self.client.drain_hud()
+            self.tracker.reset()
+            self.notices.reset()
+            self.awards.reset()
+            self.recorder.mark({"_event": "hud_drain", "dropped": dropped})
+            return
+
         status, objectives = self.client.get_mission()
         hud = self.client.get_hud()
         chat = self.client.get_chat()
         self.tracker.feed(hud)  # 解析击杀事件并累积战绩
         combat = self.tracker.get_summary()
+        self.notices.feed(hud)  # 解析自机技术通知(油温过高/襟翼非对称/发动机过热)
+        notices = self.notices.get_summary()
+        self.awards.feed(hud)   # 解析战斗嘉奖(一血/双杀/三杀/连续无伤歼敌等)
+        awards = self.awards.get_summary(combat.get("player_name"))
         with self._lock:
             self._mission_status = status
             self._mission_objectives = objectives
             self._combat = combat
+            self._notices = notices
+            self._awards = awards
             for ev in hud:
                 self._hud_events.append(ev)
             for msg in chat:
                 self._chat.append(msg)
+        # 录制：HUD/聊天增量落盘（击杀/通知可离线从 hudmsg 再解析）
+        if hud:
+            self.recorder.write_events("hudmsg", [asdict(ev) for ev in hud])
+        if chat:
+            self.recorder.write_events("chat", list(chat))
 
     def _poll_mapimg(self) -> None:
         # map_info 已由 fast 组实时缓存，这里只负责按 generation 拉取底图
@@ -256,8 +356,32 @@ class TelemetryService:
             if new_map is not None:
                 self._map_bytes, self._map_ext, self._map_gen = new_map
 
+    def _detect_replay_locked(self, ind: Indicators, now: float) -> None:
+        """判定本局是否为录像回放（调用方需已持锁，且仅在战局内调用）。
+
+        命中任一判据即把 self._replay 置真（锁定到离开战局）：
+          1) game_time_sec 较上一帧明显倒退——回放拖动时间轴往回跳，实战恒增；
+          2) 进局 grace 秒后仍未见过 mission_status=='running'，却已是终局/未定义态
+             ——回放一进场 mission 就直接返回终局结果，从不经历 running。
+        """
+        gt = getattr(ind, "game_time_sec", None)
+        if (gt is not None and self._last_game_time is not None
+                and gt < self._last_game_time - _REPLAY_TIME_BACK_SEC):
+            self._replay = True
+        if gt is not None:
+            self._last_game_time = gt
+        if self._mission_status == "running":
+            self._mission_running_seen = True
+        if (not self._replay and self._battle_entry_ts is not None
+                and now - self._battle_entry_ts > _REPLAY_MISSION_GRACE_SEC
+                and not self._mission_running_seen
+                and self._mission_status in ("success", "fail", "undefined")):
+            self._replay = True
+
     def _reset_battle_cache_locked(self) -> None:
         """离开战局时清空本局相关缓存（调用方需已持锁）。"""
+        # 录制标记：一次会话可跨多局，靠此标记供离线工具按局切分
+        self.recorder.mark({"_event": "battle_reset"})
         self._map_objects = []
         self._map_info = MapInfo(valid=False)
         self._mission_status = None
@@ -267,13 +391,20 @@ class TelemetryService:
         self._processed = None
         self._situation = None
         self._combat = None
+        self._notices = None
+        self._awards = None
         self._proximity_events.clear()
         self._proximity_threshold = None
         self.tracker.reset()
+        self.notices.reset()
+        self.awards.reset()
         self.proximity.reset()
         self._map_bytes = None
         self._map_ext = None
         self._map_gen = None
+        self._replay = False
+        self._last_game_time = None
+        self._mission_running_seen = False
 
     def _write_map(self, data: bytes, ext: str, gen: int | None) -> None:
         try:
@@ -288,6 +419,17 @@ class TelemetryService:
 
     def get_snapshot(self) -> dict[str, Any]:
         with self._lock:
+            # 回放模式：整局降级——只告诉前端“现在是回放”，不上报任何派生数据，
+            # 避免镜头切换/时间跳转造成的载具/速度/油量错位与击杀重复计数误导前端。
+            if self._replay:
+                return {
+                    "state": self._state.value,
+                    "timestamp": self._fast_ts,
+                    "in_battle": self._state is ConnectionState.IN_BATTLE,
+                    "replay": True,
+                    "note": "回放模式：当前为战斗录像回放，数据语义不可靠，已暂停上报告警/战绩/态势/嘉奖等",
+                    "meta": self._meta_locked(),
+                }
             snap = Telemetry(
                 state=self._state,
                 timestamp=self._fast_ts,
@@ -302,9 +444,12 @@ class TelemetryService:
                 chat=list(self._chat),
             )
             data = snap.to_dict()
+            data["replay"] = False
             data["processed"] = self._processed
             data["situation"] = self._situation
             data["combat"] = self._combat
+            data["hud_notices"] = self._notices
+            data["awards"] = self._awards
             data["proximity"] = {
                 "thresholds_m": self._proximity_threshold,
                 "events": list(self._proximity_events),
@@ -314,6 +459,27 @@ class TelemetryService:
 
     def get_part(self, key: str) -> Any:
         return self.get_snapshot().get(key)
+
+    def _build_record_frame(self) -> dict[str, Any]:
+        """构造一帧录制快照：在完整快照基础上剔除累积型数组（它们另走增量流），
+        避免每帧重复转存导致文件 O(n²) 膨胀。"""
+        snap = self.get_snapshot()
+        for k in ("hud_events", "chat", "hud_notices"):
+            snap.pop(k, None)
+        combat = snap.get("combat")
+        if isinstance(combat, dict):
+            combat = {k: v for k, v in combat.items() if k != "feed"}
+            snap["combat"] = combat
+        prox = snap.get("proximity")
+        if isinstance(prox, dict):
+            prox = {k: v for k, v in prox.items() if k != "events"}
+            snap["proximity"] = prox
+        return snap
+
+    def set_player_name(self, name: str | None) -> None:
+        """请求设置/清除玩家昵称（在下一次 events 轮询时应用，≤1 个 event-interval 生效）。"""
+        with self._lock:
+            self._name_req = (name or "").strip() or None
 
     def get_map(self) -> tuple[bytes | None, str | None]:
         with self._lock:
@@ -336,6 +502,7 @@ class TelemetryService:
                 "ok": True,
                 "service": "wt-telemetry",
                 "state": self._state.value,
+                "replay": self._replay,
                 "updated_at": self._fast_ts,
                 "has_map": self._map_bytes is not None,
                 "map_generation": self._map_gen,
@@ -406,6 +573,50 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(self.service.get_part("combat"))
             return
 
+        if path == "/api/identity":
+            # 查看/设置“自己是谁”。?name=昵称 设手动昵称(权威)；?clear=1 清除回退自动。
+            q = parse_qs(urlparse(self.path).query)
+            requested: Any = "(unchanged)"
+            if "clear" in q:
+                self.service.set_player_name(None)
+                requested = None
+            elif q.get("name"):
+                requested = q["name"][0]
+                self.service.set_player_name(requested)
+            combat = self.service.get_part("combat") or {}
+            self._send_json({
+                "requested": requested,
+                "note": "设置将在下一次 events 轮询（≤event-interval）后体现在 self 中",
+                "self": combat.get("self"),
+                "player_name": combat.get("player_name"),
+            })
+            return
+
+        if path == "/api/notices":
+            self._send_json(self.service.get_part("hud_notices"))
+            return
+
+        if path == "/api/awards":
+            # 战斗嘉奖（一血/双杀/三杀/连续无伤歼敌等）；?notable=1 仅返回高光子集
+            q = parse_qs(urlparse(self.path).query)
+            awards = self.service.get_part("awards") or {}
+            if q.get("notable"):
+                awards = {**awards, "feed": awards.get("notable", [])}
+            self._send_json(awards)
+            return
+
+        if path == "/api/record":
+            # 调试开关：?on=1 开始转存 / ?on=0 停止 / 无参=查状态
+            q = parse_qs(urlparse(self.path).query)
+            rec = self.service.recorder
+            if "on" in q:
+                want = q["on"][0].strip().lower() in ("1", "true", "yes", "on")
+                status = rec.start() if want else rec.stop()
+            else:
+                status = rec.status()
+            self._send_json(status)
+            return
+
         if path == "/api/proximity":
             self._send_json(self.service.get_part("proximity"))
             return
@@ -467,8 +678,24 @@ def main() -> None:
     parser.add_argument("--save-map", action="store_true", help="地图变化时落盘保存")
     parser.add_argument("--map-dir", default="maps", help="地图保存目录")
     parser.add_argument("--profiles", default=None, help="机型告警配置文件路径")
-    parser.add_argument("--player-name", default=None, help="玩家名(不含战队标签),用于统计我的K/D")
+    parser.add_argument("--player-name", default=None,
+                        help="玩家名(不含战队标签)的初始权威值；留空则自动识别，"
+                             "也可运行时用 GET /api/identity?name=xxx 设置")
+    parser.add_argument("--record", action="store_true",
+                        help="启动即开启数据转存（调试开关；也可运行时 GET /api/record?on=1 切换）")
+    parser.add_argument("--record-dir", default="records", help="转存数据根目录（默认 records）")
+    parser.add_argument("--record-interval", type=float, default=1.0,
+                        help="快照转存间隔（秒，默认 1.0；抓超速/失速等快瞬变可设 0.2）")
+    parser.add_argument("--record-segment-mb", type=float, default=32.0,
+                        help="frames 明文段滚动压缩阈值（MB，默认 32；写满即后台 gzip 留存）")
     args = parser.parse_args()
+
+    recorder = SessionRecorder(
+        root_dir=args.record_dir,
+        interval=args.record_interval,
+        segment_bytes=int(args.record_segment_mb * 1024 * 1024),
+        server_version=_Handler.server_version,
+    )
 
     client = WarThunderClient(host=args.wt_host, port=args.wt_port)
     service = TelemetryService(
@@ -481,7 +708,11 @@ def main() -> None:
         map_dir=args.map_dir,
         profiles_path=args.profiles,
         player_name=args.player_name,
+        recorder=recorder,
     )
+    if args.record:
+        st = recorder.start()
+        print(f"  [录制] 已开启 -> {st['session_dir']}")
     service.start()
 
     httpd = ThreadingHTTPServer((args.host, args.port), _Handler)
@@ -496,8 +727,14 @@ def main() -> None:
     print(f"    mapimg(map_info+map.img) {args.mapimg_interval}s")
     print("  接口： /  /api/telemetry  /api/state  /api/map_objects  /api/map.jpg")
     print("        /api/processed  /api/alerts  （自定义告警）")
-    print("        /api/situation （态势）  /api/kills （战绩）")
+    print("        /api/situation （态势）  /api/kills （战绩，含自我识别/涉我标记）")
+    print("        /api/identity （查看/设置玩家昵称：?name=xxx / ?clear=1）")
+    print("        /api/notices （自机技术通知：油温/襟翼/过热）")
+    print("        /api/awards （战斗嘉奖：一血/双杀/三杀/连续无伤歼敌；?notable=1 仅高光）")
     print("        /api/proximity （敌军接近告警，边沿触发）")
+    print("        /api/record （数据转存调试开关：?on=1 开 / ?on=0 关 / 无参查状态）")
+    if args.record:
+        print(f"  数据转存：开启（间隔 {args.record_interval}s，目录 {args.record_dir}）")
     print("  Ctrl+C 退出\n")
     try:
         httpd.serve_forever()

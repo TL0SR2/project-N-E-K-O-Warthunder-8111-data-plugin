@@ -146,6 +146,14 @@ class Indicators:
     head_temperature: float | None = None    # 缸头温度 ℃（仅气冷活塞机）
     turbine_temperature: float | None = None # 涡轮/排气温度 ℃（仅喷气机；游戏放在 water_temperature 键里，量级数百度）
     oil_temperature: float | None = None     # 油温 ℃（活塞机；喷气机一般也有）
+    # 开火状态：扫描所有 weaponN 扳机键，任一触发即开火中。仅空军有该信号；
+    # 陆/海战 indicators 无 weaponN 键，恒为 None（不适用）。
+    weapon_firing: bool | None = None        # True=开火中 / False=空军未开火 / None=该载具无开火信号
+    # 游戏内时间（座舱时钟）
+    game_time: str | None = None             # "HH:MM:SS"（当日时刻）
+    game_time_sec: int | None = None         # 当日秒数（0~86399）
+    # 起落架状态（由三个指示灯 gear_lamp_down/up/off 归并的离散状态）
+    gear_state: str | None = None            # down=锁定放下 / up=锁定收起 / moving=运动中 / None=无此设备
     raw: dict[str, Any] = field(default_factory=dict)
 
 
@@ -170,6 +178,10 @@ class MapObject:
     sy: float | None = None
     ex: float | None = None
     ey: float | None = None
+
+
+# 计入敌我统计的作战单位类型（其余如 bombing_point/airfield 是任务/场景标记，不算单位）
+_UNIT_TYPES = {"aircraft", "ground_model"}
 
 
 @dataclass
@@ -225,11 +237,18 @@ class Telemetry:
 
     @property
     def enemies(self) -> list[MapObject]:
-        return [o for o in self.map_objects if o.faction == "enemy"]
+        # 仅作战单位（飞机/地面载具）计入敌军；bombing_point 等任务标记是红色但非单位
+        return [
+            o for o in self.map_objects
+            if o.faction == "enemy" and o.type in _UNIT_TYPES
+        ]
 
     @property
     def allies(self) -> list[MapObject]:
-        return [o for o in self.map_objects if o.faction == "ally"]
+        return [
+            o for o in self.map_objects
+            if o.faction == "ally" and o.type in _UNIT_TYPES
+        ]
 
     @property
     def domain(self) -> str:
@@ -337,6 +356,61 @@ def _max_engine_temp(d: dict[str, Any], base: str) -> float | None:
             if best is None or v > best:
                 best = v
     return best
+
+
+def _weapon_firing(d: dict[str, Any]) -> bool | None:
+    """开火状态：扫描所有 weaponN 扳机键，任一 >0.5 视为开火中。
+
+    不同机型把主/副武器映射到不同槽位（实测某喷气机用 weapon2/weapon4，无 weapon1/3），故不写死编号。
+    陆/海战载具的 indicators 没有任何 weaponN 键 -> 返回 None（不适用），以区别于空军“没开火”的 False。
+    """
+    found = False
+    firing = False
+    for k, v in d.items():
+        if k.startswith("weapon") and k[6:].isdigit():
+            found = True
+            try:
+                if float(v) > 0.5:
+                    firing = True
+                    break
+            except (TypeError, ValueError):
+                continue
+    return firing if found else None
+
+
+def _parse_game_clock(d: dict[str, Any]) -> tuple[str | None, int | None]:
+    """座舱时钟 -> ("HH:MM:SS", 当日秒数)。
+
+    clock_hour 含小数（=小时 + 分钟/60，如 7.25 即 07:15），故只取其整数部分作小时，
+    分秒分别用 clock_min / clock_sec。三者都缺时返回 (None, None)。
+    """
+    h = _num(d, "clock_hour")
+    m = _num(d, "clock_min")
+    s = _num(d, "clock_sec")
+    if h is None and m is None and s is None:
+        return None, None
+    hh = int(h) % 24 if h is not None else 0
+    mm = int(m) % 60 if m is not None else 0
+    ss = int(s) % 60 if s is not None else 0
+    return f"{hh:02d}:{mm:02d}:{ss:02d}", hh * 3600 + mm * 60 + ss
+
+
+def _gear_state_from_lamps(d: dict[str, Any]) -> str | None:
+    """三盏起落架指示灯 -> 离散状态。
+
+    gear_lamp_down=1 表示锁定放下；gear_lamp_up=1 锁定收起；gear_lamp_off=1 运动中(红灯)。
+    固定起落架机型一般无此三键 -> 返回 None。
+    """
+    down = _num(d, "gear_lamp_down")
+    up = _num(d, "gear_lamp_up")
+    off = _num(d, "gear_lamp_off")
+    if down is not None and down > 0.5:
+        return "down"
+    if up is not None and up > 0.5:
+        return "up"
+    if off is not None and off > 0.5:
+        return "moving"
+    return None
 
 
 def _pair(value: Any) -> tuple[float, float] | None:
@@ -551,6 +625,13 @@ class WarThunderClient:
         )
         water_raw = _max_engine_temp(data, "water_temperature")
         head_raw = _max_engine_temp(data, "head_temperature")
+        # 开火状态：扫描所有 weaponN 扳机键（槽位随机型不同，实测喷气机用 weapon2/weapon4）；
+        # 陆/海战 indicators 无 weaponN 键 -> 返回 None（不适用，区别于“没开火”的 False）
+        firing = _weapon_firing(data)
+        # 游戏内时间：clock_hour 含小数(=时+分/60)，取整数小时 + clock_min/sec
+        game_time, game_time_sec = _parse_game_clock(data)
+        # 起落架：三盏指示灯 down/up/off
+        gear_state = _gear_state_from_lamps(data)
         return Indicators(
             valid=True,
             army=army,
@@ -589,6 +670,10 @@ class WarThunderClient:
             head_temperature=None if is_jet else head_raw,
             turbine_temperature=water_raw if is_jet else None,
             oil_temperature=_max_engine_temp(data, "oil_temperature"),
+            weapon_firing=firing,
+            game_time=game_time,
+            game_time_sec=game_time_sec,
+            gear_state=gear_state,
             raw=data,
         )
 
@@ -693,6 +778,17 @@ class WarThunderClient:
             f"/hudmsg?lastEvt={self._last_evt}&lastDmg={self._last_dmg}"
         )
         return self._parse_hudmsg(data)
+
+    def drain_hud(self) -> int:
+        """排空当前 hudmsg 积压：把 lastEvt/lastDmg 游标推进到最新但丢弃事件。
+
+        用途：8111 的 /hudmsg 是跨对局保留的滚动缓冲，且 id 不随换局归零。
+        服务(重)启/重连后游标为 0，进入对局时首拉会把上一局残留整批返回，
+        若直接喂给 KillTracker 会把别人/上一局的击杀阵亡错算进本局。
+        进入对局时调用本方法先排空积压（这些都早于本局开始，必为旧事件），
+        之后再正常增量拉取即可。返回被丢弃的事件条数（便于日志/记录）。
+        """
+        return len(self.get_hud())
 
     def get_chat(self) -> list[dict[str, Any]]:
         """增量拉取 /gamechat，自动推进 lastId 游标。"""
