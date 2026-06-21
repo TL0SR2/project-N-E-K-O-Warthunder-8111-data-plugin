@@ -24,7 +24,7 @@ def test_detector_engine_collects_condition_and_discrete_events_then_dedups():
         vehicle_type="bf-109f-4",
         fuel_fraction=0.08,
         flags={"fuel_low": True},
-        combat={"feed": [{"id": 7, "is_kill": True, "killer": "Me", "victim": "Bandit"}]},
+        combat={"feed": [{"id": 7, "is_kill": True, "is_my_kill": True, "killer": "Me", "victim": "Bandit"}]},
     )
 
     events = engine.feed(prev, cur)

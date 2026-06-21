@@ -53,6 +53,7 @@ def parse_telemetry(payload: dict[str, Any] | None) -> BattleState:
         connected=True,
         conn_state=str(payload.get("state") or "offline"),
         in_battle=bool(payload.get("in_battle", False)),
+        replay=bool(payload.get("replay", False)),
         vehicle_valid=bool(vehicle.get("valid", False)),
         domain=str(payload.get("domain") or "unknown"),
         vehicle_type=(indicators.get("vehicle_type") or processed.get("vehicle_type")),

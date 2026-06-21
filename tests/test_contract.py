@@ -48,3 +48,10 @@ def test_critical_flag():
     payload["processed"]["flags"] = {"stall_critical": True}
     s = parse_telemetry(payload)
     assert s.any_critical_flag() is True
+
+
+def test_parse_replay_flag():
+    payload = _sample()
+    payload["replay"] = True
+    s = parse_telemetry(payload)
+    assert getattr(s, "replay", False) is True

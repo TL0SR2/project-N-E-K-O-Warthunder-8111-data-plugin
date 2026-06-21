@@ -30,15 +30,65 @@ class SpawnDetector(DiscreteDetector):
         return None
 
 
+def _feed_items(state: BattleState) -> list[dict[str, Any]]:
+    feed = state.combat.get("feed") if isinstance(state.combat, dict) else None
+    if not isinstance(feed, list):
+        return []
+    return [item for item in feed if isinstance(item, dict)]
+
+
+def _feed_ids(feed: list[dict[str, Any]]) -> list[int]:
+    ids: list[int] = []
+    for item in feed:
+        try:
+            ids.append(int(item.get("id")))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
 class DeathDetector(DiscreteDetector):
-    """阵亡：存活→在战但无载具遥测。cause 暂未知（待 hudmsg 富化）。"""
+    """Death events come from data-layer combat.feed[].is_my_death."""
 
     id = "you_died"
 
+    def __init__(self) -> None:
+        self._last_id: int = -1
+
     def detect(self, prev: BattleState, cur: BattleState) -> BattleEvent | None:
-        if _alive(prev) and cur.in_battle and not cur.vehicle_valid:
-            return BattleEvent("you_died", payload={"cause": "unknown"}, ts=cur.timestamp or 0.0, level="critical")
-        return None
+        feed = _feed_items(cur)
+        ids = _feed_ids(feed)
+        if not ids:
+            return None
+        max_id = max(ids)
+        if max_id < self._last_id:
+            self._last_id = -1
+
+        newest: dict[str, Any] | None = None
+        for item in feed:
+            try:
+                eid = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if eid <= self._last_id:
+                continue
+            if item.get("is_my_death") is True:
+                if newest is None or eid > int(newest.get("id")):
+                    newest = item
+        self._last_id = max(self._last_id, max_id)
+        if newest is None:
+            return None
+
+        return BattleEvent(
+            "you_died",
+            payload={
+                "killer_name": newest.get("killer"),
+                "killer_vehicle": newest.get("killer_vehicle"),
+                "cause": newest.get("action") or "unknown",
+            },
+            ts=cur.timestamp or 0.0,
+            level="critical",
+        )
 
 
 class BattleEndDetector(DiscreteDetector):
@@ -58,7 +108,7 @@ class BattleEndDetector(DiscreteDetector):
 
 
 class KillDetector(DiscreteDetector):
-    """击杀：combat.feed 里 killer==player_name 的新 is_kill。player_name 空=不产出（桩）。"""
+    """Kill events come from data-layer combat.feed[].is_my_kill."""
 
     id = "you_killed"
 
@@ -67,19 +117,10 @@ class KillDetector(DiscreteDetector):
         self._last_id: int = -1  # 已处理的最大 feed id（单调、确定、有界；feed id 递增）
 
     def detect(self, prev: BattleState, cur: BattleState) -> BattleEvent | None:
-        if not self.player_name:
+        feed = _feed_items(cur)
+        if not feed:
             return None
-        feed = cur.combat.get("feed") if isinstance(cur.combat, dict) else None
-        if not isinstance(feed, list) or not feed:
-            return None
-        ids: list[int] = []
-        for item in feed:
-            if not isinstance(item, dict):
-                continue
-            try:
-                ids.append(int(item.get("id")))
-            except (TypeError, ValueError):
-                continue
+        ids = _feed_ids(feed)
         if not ids:
             return None
         max_id = max(ids)
@@ -95,7 +136,7 @@ class KillDetector(DiscreteDetector):
                 continue
             if eid <= self._last_id:
                 continue
-            if item.get("is_kill") and str(item.get("killer") or "") == self.player_name:
+            if item.get("is_my_kill") is True:
                 if newest is None or eid > int(newest.get("id")):
                     newest = item
         self._last_id = max(self._last_id, max_id)

@@ -140,6 +140,12 @@ class DetectorEngine:
         self.detectors = detectors
 
     def feed(self, prev: BattleState, cur: BattleState) -> list[BattleEvent]:
+        if cur.replay:
+            for det in self.detectors:
+                reset = getattr(det, "reset", None)
+                if callable(reset):
+                    reset()
+            return []
         out: list[BattleEvent] = []
         for det in self.detectors:
             ev = det.feed(prev, cur)
