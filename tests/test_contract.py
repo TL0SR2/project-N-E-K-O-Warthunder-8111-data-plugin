@@ -55,3 +55,15 @@ def test_parse_replay_flag():
     payload["replay"] = True
     s = parse_telemetry(payload)
     assert getattr(s, "replay", False) is True
+
+
+def test_parse_hud_notices_feed_without_losing_raw_contract():
+    payload = _sample()
+    payload["hud_notices"] = {
+        "feed": [
+            {"id": 42, "code": "engine_overheat", "severity": "warning", "text": "水温过高"},
+        ],
+    }
+    s = parse_telemetry(payload)
+    assert s.hud_notices == payload["hud_notices"]["feed"]
+    assert s.raw["hud_notices"]["feed"][0]["text"] == "水温过高"

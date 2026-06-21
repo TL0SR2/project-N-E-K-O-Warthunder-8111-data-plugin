@@ -196,6 +196,7 @@ class BattleState:
 
     # 离散来源
     hud_events: list[dict[str, Any]] = field(default_factory=list)
+    hud_notices: list[dict[str, Any]] = field(default_factory=list)
     combat: dict[str, Any] = field(default_factory=dict)
     mission_status: str | None = None
 

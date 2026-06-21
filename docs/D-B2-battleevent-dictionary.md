@@ -9,6 +9,7 @@
 - 已重画边界：消费数据层 `/api/processed.flags` 作为"条件已成立"信号，详见 **D-B5 v0.2 映射表（权威）**。本字典的 severity/priority/cooldown/scenario/抢占/去重仍是**我们这层**的职责，不变。
 - **`steep_dive` 已删除**（v1 砍、留 v2）：本文相关条目作废。
 - **`overspeed` 来源改为数据层 flag `overspeed_warn` / `overspeed_critical`**，不再由我们算阈值。数据层 v1.6 已提供，插件侧待适配/真机验证。
+- **`overheat` 除数据层 flag 外，也可消费 `hud_notices.feed[].code=engine_overheat/oil_overheat`**。HUD notice 只使用安全 code，不把 raw 文本带入 prompt；`powertrain_failure` 暂不直接提升为播报事件。
 - 各连续事件"来源 Detector/信号"统一改读上游 flag（见 D-B3 v0.2 / D-B5 映射）；下方各条仍写原始字段，仅作 payload/语义参考。
 - **两级 severity（待你确认）**：数据层给 warning/critical；建议 critical→高 severity 可抢占、warning→中 severity，推翻早期"单级"暂定。
 
@@ -31,7 +32,7 @@
 | `stall_risk` | 连续派生 | 危急 | 8 | 9 | 是 | 15s | IN_FLIGHT / COMBAT_STRESS →CRITICAL |
 | `low_alt_danger` | 连续派生 | 危急 | 9 | 9 | 是 | 10s | IN_FLIGHT / COMBAT_STRESS →CRITICAL |
 | `overspeed` | 连续派生 | 危急 | 7 | 8 | 是 | 15s | IN_FLIGHT / COMBAT_STRESS →CRITICAL |
-| `overheat` | 连续派生 | 重要提醒 | 6 | 6 | 否 | 30s | IN_FLIGHT / COMBAT_STRESS |
+| `overheat` | 连续派生 / HUD notice | 重要提醒 | 6 | 6 | 否 | 30s | IN_FLIGHT / COMBAT_STRESS |
 | `low_fuel` | 连续派生 | 一般提醒 | 3 | 4 | 否 | 每局 1–2 次 | IN_FLIGHT |
 | `you_killed` | hudmsg 离散 | 战斗 | 3 | 5 | 否 | 8s（多杀合并） | IN_FLIGHT / COMBAT_STRESS |
 | `you_died` | hudmsg+valid | 生命周期 | 8 | 10 | 是 | 每次死亡 1 次 | DEAD（死亡瞬间） |
@@ -87,7 +88,7 @@
 
 #### `overheat` 发动机过热
 - 中文说明：水温/油温/排气温持续超红线，发动机受损风险（慢性）。
-- 来源信号：`overheat` detector（`water temp 1, C` / `oil temp 1, C` / `head temp, C`，辅以 `throttle`/`RPM`，需持续 N 秒）。
+- 来源信号：`overheat` flag detector（`engine_overheat*` / `oil_overheat*`）或 `hud_notices.feed[].code=engine_overheat/oil_overheat` 的安全 code-only 离散通知。
 - 触发条件摘要：任一温度持续超阈值 N 秒（confirm 窗口偏长，避免瞬时尖峰）。
 - 允许 Scenario：IN_FLIGHT、COMBAT_STRESS。
 - 被抑制 Scenario：SPAWNING、OUT_OF_BATTLE、DEAD、BATTLE_ENDED、**CRITICAL_RISK（危急时压住次要）**。

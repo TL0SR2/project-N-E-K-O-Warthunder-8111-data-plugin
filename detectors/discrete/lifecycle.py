@@ -12,6 +12,7 @@ from typing import Any
 
 from ...core.contracts import BattleEvent, BattleState
 from .._base import DiscreteDetector
+from .notices import HudNoticeDetector
 
 _END_STATUSES = frozenset({"win", "won", "victory", "fail", "failed", "lost", "defeat", "left", "ended", "finished"})
 
@@ -151,4 +152,4 @@ class KillDetector(DiscreteDetector):
 
 
 def build_discrete_detectors(player_name: str) -> list[DiscreteDetector]:
-    return [SpawnDetector(), DeathDetector(), BattleEndDetector(), KillDetector(player_name)]
+    return [SpawnDetector(), DeathDetector(), BattleEndDetector(), KillDetector(player_name), HudNoticeDetector()]

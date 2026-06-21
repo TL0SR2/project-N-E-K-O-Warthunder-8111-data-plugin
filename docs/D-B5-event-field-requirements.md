@@ -9,7 +9,7 @@
 合作者数据层已自带"逐机阈值 → 告警 flags"（`/api/processed`，端口 `:8112`）。据此重画边界（已拍板）：
 
 - **数据层负责**：原始事实（`/api/state`、`/api/indicators`）+ 逐机阈值判定（`/api/processed.flags`/`alerts`/`level`，两级 warning/critical）。
-- **我们负责**：消费其 flags 作为"条件已成立"信号，只做 边沿 / debounce / 迟滞 / re-arm / cooldown / Scenario 门控 / 仲裁 / 提示意图。
+- **我们负责**：消费其 flags 作为"条件已成立"信号；消费 `hud_notices` / `combat.feed` 这类带 id 的边沿事实；只做 边沿 / debounce / 去重 / 迟滞 / re-arm / cooldown / Scenario 门控 / 仲裁 / 提示意图。
 - **DTO 不再自定义**：直接采用数据层 `/api/telemetry` 结构（见其 `后端接口文档.md`）。下方 §1~§7 的"原始字段需求"**降级为参考**（仅用于校验数据层字段是否齐全）。
 
 ### 事件 → 数据层来源 映射（v1，9 个事件）
@@ -18,7 +18,7 @@
 |---|---|---|---|
 | `stall_risk` | flags `stall_warning`/`stall_critical`（OR `aoa_high`/`aoa_critical`） | 边沿+debounce+迟滞+cooldown | ias_kmh, aoa_deg, altitude_m |
 | `overspeed` | flags `overspeed_warn` / `overspeed_critical`（数据层 v1.6 已提供，插件侧待验证） | 同上 | ias_kmh, mach |
-| `overheat` | flags `engine_overheat`/`engine_overheat_critical`（OR `oil_overheat*`） | 同上（不抢占） | water/head/turbine/oil temp_c |
+| `overheat` | flags `engine_overheat`/`engine_overheat_critical`（OR `oil_overheat*`）；或 `hud_notices.feed[].code=engine_overheat/oil_overheat` | flags 走边沿+debounce；hud_notices 按 id 去重（不抢占） | temp_c；或 safe notice code |
 | `low_fuel` | flags `fuel_low`/`fuel_critical` | 同上（仅 IN_FLIGHT） | fuel_fraction, fuel_remaining_sec |
 | `low_alt_danger` | flags `altitude_low`/`altitude_critical`（MSL 非 AGL） | 同上 | altitude_m, climb_ms |
 | `spawn` | `state` not_in_battle→in_battle / 新 `vehicle_type` | 边沿一次 | vehicle_type |
@@ -32,7 +32,7 @@
 
 ### 给合作者的 TODO（汇合产出）
 - `overspeed_warn` / `overspeed_critical` 已由数据层 v1.6 提供；插件侧下一步是验证字段名、触发节奏和 Arbiter 优先级。
-- 完成 hudmsg/击杀解析（其待办：击杀/起火/重创/油温/非对称襟翼），保证 `combat.feed` 与 damage 流稳定——我们的 `you_killed/you_died` 依赖它。
+- 完成 hudmsg/击杀解析（其待办：击杀/起火/重创/油温/非对称襟翼），保证 `combat.feed` 与 `hud_notices` 流稳定——我们的 `you_killed/you_died` 与 HUD notice overheat 接缝依赖它。
 - 确认 `player_name` 注入方式（我们靠它判"关于我"）。
 
 ### 待你确认
