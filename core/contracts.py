@@ -163,6 +163,7 @@ class BattleState:
     connected: bool = False                 # /api/telemetry 是否拉到
     conn_state: str = "offline"             # offline / not_in_battle / in_battle（数据层 state）
     in_battle: bool = False
+    replay: bool = False                    # data-layer replay degrade mode; suppress real battle events
     vehicle_valid: bool = False             # vehicle.valid：在战且有载具遥测=存活（出生/死亡判定用）
     domain: str = "unknown"                 # air / heli / ground / naval / menu / unknown
     vehicle_type: str | None = None

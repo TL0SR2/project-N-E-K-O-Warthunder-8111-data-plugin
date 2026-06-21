@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from neko_warthunder.adapters.telemetry_client import parse_telemetry
 from neko_warthunder.core import contracts as C
-from neko_warthunder.detectors._base import ConditionDetector
+from neko_warthunder.detectors._base import ConditionDetector, DetectorEngine
+from neko_warthunder.detectors.condition.flight_safety import build_condition_detectors
 from neko_warthunder.detectors.discrete.lifecycle import DeathDetector, KillDetector, SpawnDetector
 
 
@@ -72,26 +74,104 @@ def test_spawn_not_fired_after_telemetry_blip():
 def test_death_detector():
     det = DeathDetector()
     prev = C.BattleState(in_battle=True, vehicle_valid=True)
-    cur = C.BattleState(in_battle=True, vehicle_valid=False)
+    cur = C.BattleState(
+        in_battle=True,
+        vehicle_valid=True,
+        combat={"feed": [{"id": 3, "is_my_death": True, "killer": "Opponent", "action": "crashed"}]},
+    )
     ev = det.feed(prev, cur)
     assert ev is not None and ev.event_id == "you_died" and ev.level == "critical"
 
 
 def test_kill_dedup_monotonic():
     det = KillDetector("Me")
-    feed1 = {"player_name": "Me", "feed": [{"id": 5, "is_kill": True, "killer": "Me", "victim": "A"}]}
+    feed1 = {"player_name": "Me", "feed": [{"id": 5, "is_kill": True, "is_my_kill": True, "killer": "Me", "victim": "A"}]}
     cur1 = C.BattleState(in_battle=True, vehicle_valid=True, combat=feed1)
     ev = det.feed(C.BattleState(), cur1)
     assert ev is not None and ev.event_id == "you_killed"
     assert det.feed(cur1, cur1) is None  # 同一 feed 不重发
-    feed2 = {"player_name": "Me", "feed": [{"id": 8, "is_kill": True, "killer": "Me", "victim": "B"}, {"id": 5, "is_kill": True, "killer": "Me", "victim": "A"}]}
+    feed2 = {"player_name": "Me", "feed": [{"id": 8, "is_kill": True, "is_my_kill": True, "killer": "Me", "victim": "B"}, {"id": 5, "is_kill": True, "is_my_kill": True, "killer": "Me", "victim": "A"}]}
     cur2 = C.BattleState(in_battle=True, vehicle_valid=True, combat=feed2)
     ev2 = det.feed(cur1, cur2)
     assert ev2 is not None and ev2.payload.get("victim") == "B"  # 只发新 id
 
 
-def test_kill_requires_player_name():
+def test_kill_requires_is_my_kill_flag():
     det = KillDetector("")
     feed = {"feed": [{"id": 1, "is_kill": True, "killer": "Someone", "victim": "X"}]}
     cur = C.BattleState(in_battle=True, vehicle_valid=True, combat=feed)
-    assert det.feed(C.BattleState(), cur) is None  # 无 player_name → 桩，不产出
+    assert det.feed(C.BattleState(), cur) is None
+
+
+def test_overspeed_warn_and_critical_flags_emit_events():
+    engine = DetectorEngine(list(build_condition_detectors()))
+    prev = C.BattleState(in_battle=True, vehicle_valid=True)
+
+    warn = C.BattleState(in_battle=True, vehicle_valid=True, flags={"overspeed_warn": True}, ias_kmh=760.0)
+    assert engine.feed(prev, warn) == []
+    events = engine.feed(warn, warn)
+    assert len(events) == 1
+    assert events[0].event_id == "overspeed"
+    assert events[0].level == "warning"
+
+    critical = C.BattleState(in_battle=True, vehicle_valid=True, flags={"overspeed_critical": True}, ias_kmh=880.0)
+    events = engine.feed(warn, critical)
+    assert len(events) == 1
+    assert events[0].event_id == "overspeed"
+    assert events[0].level == "critical"
+
+
+def test_kill_detector_uses_is_my_kill_flag():
+    det = KillDetector("Me")
+    feed = {
+        "player_name": "Me",
+        "feed": [{"id": 10, "is_kill": True, "is_my_kill": True, "killer": "OtherName", "victim": "Target"}],
+    }
+    cur = C.BattleState(in_battle=True, vehicle_valid=True, combat=feed)
+    ev = det.feed(C.BattleState(), cur)
+    assert ev is not None and ev.event_id == "you_killed"
+    assert ev.payload.get("victim") == "Target"
+
+
+def test_death_detector_uses_is_my_death_flag():
+    det = DeathDetector()
+    feed = {
+        "player_name": "Me",
+        "feed": [
+            {
+                "id": 20,
+                "is_kill": True,
+                "is_my_death": True,
+                "killer": "Opponent",
+                "victim": "Me",
+                "action": "shot_down",
+            }
+        ],
+    }
+    cur = C.BattleState(in_battle=True, vehicle_valid=True, combat=feed)
+    ev = det.feed(C.BattleState(in_battle=True, vehicle_valid=True), cur)
+    assert ev is not None and ev.event_id == "you_died"
+    assert ev.payload.get("killer_name") == "Opponent"
+    assert ev.payload.get("cause") == "shot_down"
+
+
+def test_vehicle_valid_drop_is_not_death_signal():
+    det = DeathDetector()
+    prev = C.BattleState(in_battle=True, vehicle_valid=True)
+    cur = C.BattleState(in_battle=True, vehicle_valid=False, combat={"feed": []})
+    assert det.feed(prev, cur) is None
+
+
+def test_replay_telemetry_suppresses_detector_events():
+    payload = {
+        "state": "in_battle",
+        "in_battle": True,
+        "replay": True,
+        "timestamp": 123.0,
+        "combat": {"feed": [{"id": 1, "is_my_death": True, "killer": "Opponent"}]},
+        "processed": {"flags": {"overspeed_critical": True}},
+    }
+    prev = C.BattleState(connected=True, in_battle=True, vehicle_valid=True)
+    cur = parse_telemetry(payload)
+    engine = DetectorEngine(list(build_condition_detectors()) + [DeathDetector()])
+    assert engine.feed(prev, cur) == []
