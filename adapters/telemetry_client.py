@@ -45,6 +45,7 @@ def parse_telemetry(payload: dict[str, Any] | None) -> BattleState:
     vehicle = payload.get("vehicle") if isinstance(payload.get("vehicle"), dict) else {}
     indicators = payload.get("indicators") if isinstance(payload.get("indicators"), dict) else {}
     meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    hud_notices = payload.get("hud_notices") if isinstance(payload.get("hud_notices"), dict) else {}
     flags_raw = processed.get("flags") if isinstance(processed.get("flags"), dict) else {}
 
     fast_meta = meta.get("fast") if isinstance(meta.get("fast"), dict) else {}
@@ -74,6 +75,7 @@ def parse_telemetry(payload: dict[str, Any] | None) -> BattleState:
         turbine_temp_c=_num(processed.get("turbine_temp_c")),
         oil_temp_c=_num(processed.get("oil_temp_c")),
         hud_events=list(payload.get("hud_events") or []) if isinstance(payload.get("hud_events"), list) else [],
+        hud_notices=list(hud_notices.get("feed") or []) if isinstance(hud_notices.get("feed"), list) else [],
         combat=payload.get("combat") if isinstance(payload.get("combat"), dict) else {},
         mission_status=(str(payload["mission_status"]) if payload.get("mission_status") is not None else None),
         raw=payload,

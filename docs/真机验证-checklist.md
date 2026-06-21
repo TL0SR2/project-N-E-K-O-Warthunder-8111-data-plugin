@@ -1,6 +1,6 @@
 # 真机验证 checklist
 
-> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer 已完成；逻辑自检以 `42/42 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
+> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer 已完成；逻辑自检以 `62/62 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
 
 ## 已完成的 Hosted UI Smoke
 
@@ -22,7 +22,7 @@
 
 待复核：
 
-- 过热/炸缸：真机 UI 出现油温橙/红、发动机黄、炸缸现象，但插件未稳定观察到 `overheat` 输出。后续需要核对 `/api/telemetry` 中 `engine_overheat` / `oil_overheat` / failure 字段，以及插件侧 flag/event 映射。
+- 过热/炸缸：真机 UI 出现油温橙/红、发动机黄、炸缸现象；插件侧已补 `hud_notices.feed[].code=engine_overheat/oil_overheat` 到 `overheat` 的映射。后续需要真机复测该接缝；`powertrain_failure` 暂不直接播报。
 
 ## 剩余接缝
 
@@ -48,7 +48,7 @@
    uv run python tests/run_logic_tests.py
    ```
 
-   预期：`42/42 passed`。
+   预期：`62/62 passed`。
 
 3. 启动宿主后启动插件，确认 `status` / Hosted UI context 可返回状态。
 
@@ -90,7 +90,7 @@
    - `combat.feed[]` 是否有稳定递增 `id`。
    - `combat.feed[]` 是否有 `is_my_kill` / `is_my_death`。
    - `combat.self` / `player_name` / `active_players` 是否符合 `/api/identity` 设定。
-   - `hud_notices` 是否存在且不会直接进入 prompt。
+   - `hud_notices` 是否存在；`engine_overheat` / `oil_overheat` code 是否能触发 `overheat`，且 raw 文本不会直接进入 prompt。
    - `awards` 是否存在且不会绕过 T-Safety。
 
 4. identity seam：
@@ -124,7 +124,7 @@
 注意：
 
 - overspeed 不再是数据层缺口，但插件侧仍需要验证 flag 是否能触发正确事件。
-- 2026-06-21 已验证低空 / 失速 / pause / resume / test_say 基础链路；过热/炸缸仍需字段映射复核。
+- 2026-06-21 已验证低空 / 失速 / pause / resume / test_say 基础链路；过热/炸缸已补插件侧 `hud_notices` code 映射，仍需真机 dry_run 复测。
 - kill/death/hudmsg/combat.feed/awards 在 M3 DTO 适配和真机 dry_run 验证前只做 dry_run / audit，不做正式播报。
 
 ## 接缝 5：dry_run=false 真实开口

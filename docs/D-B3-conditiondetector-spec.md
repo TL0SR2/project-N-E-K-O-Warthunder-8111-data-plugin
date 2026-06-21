@@ -10,7 +10,7 @@
 
 - **连续 Detector 的 `signal` 改为"读上游 flag"**：enter 谓词 = "数据层 flag 为真"、exit 谓词 = "flag 为假"，不再自己比阈值。第 4 节 FSM / debounce / 迟滞 / re-arm **完全不变**——它们仍由我们做（数据层 flag 是电平型、每帧出现、无防抖/边沿）。
 - **v1 不再有"自己算原始阈值"的 Detector**：overspeed 改由数据层补 flag、steep_dive 已删，所以所有连续 Detector 统一退化成"flag 边沿包装器"，**零混合**。
-- 第 5 节两个家族仍成立：ConditionDetector（上游 flag → 边沿 FSM）/ DiscreteDetector（`hud_events`/`combat`/`state` 跳变 → 去重）。
+- 第 5 节两个家族仍成立：ConditionDetector（上游 flag → 边沿 FSM）/ DiscreteDetector（`hud_events`/`hud_notices`/`combat`/`state` 跳变 → 去重）。
 - 逐机阈值 profile 归数据层 `vehicle_profiles`，**不在我们这层**。
 
 ### 数据源边沿语义分类（关键：数据层输出是混合的，按源消费，别一刀切）
@@ -20,7 +20,7 @@
 | 数据源 | 边沿语义 | 我们怎么消费 | v1 例 |
 |---|---|---|---|
 | `processed.flags` / `alerts` | **电平型**（每帧出现） | ConditionDetector：**我们**做边沿+debounce+迟滞+re-arm | stall/aoa/altitude/fuel/overheat/overspeed（数据层 v1.6 已给 flag，插件侧待验证） |
-| `hud_events` / `combat.feed` | **已边沿型**（带递增 id） | DiscreteDetector：**按 id 去重**，每个新 id 一次（fire-once） | you_killed / you_died |
+| `hud_events` / `hud_notices` / `combat.feed` | **已边沿型**（带递增 id） | DiscreteDetector：**按 id 去重**，每个新 id 一次（fire-once） | overheat 技术通知 / you_killed / you_died |
 | `proximity.events` | **已边沿型**（首次进入触发一次，带 id/kind） | DiscreteDetector：按 id 去重（合作者的例子，**v2**，v1 不消费） | 敌机接近 |
 | `state` / `vehicle_type` / `mission_status` | **状态跳变型** | 检测跳变沿一次 | spawn / death / battle_end |
 
@@ -104,7 +104,7 @@ stateDiagram-v2
 | 输入 | BattleState 连续信号 + 短历史 | 离散事实（新 hudmsg id / `valid` 跳变 / mission 状态变化） |
 | "边沿"来自 | 阈值 + confirm + 迟滞的 FSM（第 4 节） | **新事实的到达**（无阈值、无迟滞） |
 | 去重靠 | re-arm（FSM ACTIVE→ARMED） | 游标/已见 id 集合（每个新 id 一次） |
-| 例 | stall/overspeed/overheat/low_fuel/low_alt/steep_dive | you_killed/you_died/spawn/battle_end |
+| 例 | stall/overspeed/overheat/low_fuel/low_alt/steep_dive | overheat HUD notice / you_killed/you_died/spawn/battle_end |
 | 共同点 | **同一输出契约**（event_id+edge+payload+ts）、同一注册接口、同样"只产候选不决策" | 同左 |
 
 > 结论：**统一接口、统一注册表、统一引擎**；阈值 FSM 只是 ConditionDetector 这一家族的内部实现，不强加给离散事件。

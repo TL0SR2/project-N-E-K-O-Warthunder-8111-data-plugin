@@ -8,7 +8,7 @@
 - Minimal Panel is complete.
 - T4 integration tests are complete.
 - `T-Safety: output text sanitizer` is complete.
-- Logic self-check currently passes: `42/42`.
+- Logic self-check currently passes: `62/62`.
 - Real-machine `dry_run` smoke passed on 2026-06-21 for Hosted UI context/actions, safety pause/resume, stall/low-altitude decision flow, and dry-run dispatcher output.
 - Default runtime mode is `dry_run = true`; the plugin runs the decision chain but does not push real catgirl speech until dry run is disabled.
 - The plugin boundary is HTTP `:8112` (`/api/telemetry`) only. It consumes the vendored data layer and must not import or modify `data_layer/` code.
@@ -24,10 +24,10 @@
 ## Not Done Yet
 
 - Real-machine `dry_run` seams are partially validated; real-speech `dry_run=false` seams still need validation.
-- Plugin-side M3 adaptation to data-layer `v1.6` DTO is not implemented yet.
+- Plugin-side M3 adaptation to data-layer `v1.6` DTO is in progress.
 - `you_killed` and `you_died` should be adapted to `combat.feed[].is_my_kill` and `combat.feed[].is_my_death`; the old `vehicle_valid` death path is not reliable enough as the main source.
 - `overspeed` is no longer a data-layer gap; plugin-side dry-run validation has observed the event path, but DTO mapping should still be kept under M3 regression coverage.
-- Overheat / blown-engine real-machine smoke exposed a seam gap: the game UI showed oil/engine heat and engine failure, but the plugin did not observe a stable `overheat` event from `/api/telemetry`. Recheck data-layer `engine_overheat` / `oil_overheat` / failure fields and plugin mapping before treating overheat as live-validated.
+- Overheat HUD-notice seam is implemented for `hud_notices.feed[].code` values `engine_overheat` and `oil_overheat`, mapped to the existing `overheat` event with safe code-only payload. It still needs real-machine dry-run revalidation; `powertrain_failure` is intentionally not promoted to a speech event yet.
 - `replay: true` still needs a plugin degrade or silence policy.
 - `/api/identity` still needs a player-name seam through UI/config/runtime orchestration.
 - T-Safety is now in place at the NekoDispatcher / prompt-builder boundary. Formal kill/death/hudmsg/combat.feed/awards speech still needs M3 DTO adaptation and real-machine validation before dry_run=false rollout.
@@ -48,14 +48,14 @@ uv run pytest tests -q
 
 Notes:
 
-- `tests/run_logic_tests.py` is the no-host logic self-check and should report `42/42 passed`.
+- `tests/run_logic_tests.py` is the no-host logic self-check and should report `62/62 passed`.
 - If an older handoff note still shows the pre-T4 test count, treat it as stale unless it explicitly refers to an older test entry point.
 - The real-machine checklist is in `docs/真机验证-checklist.md`; it now includes the 2026-06-21 dry-run smoke result.
 
 ## Next Recommended Work
 
-1. Audit and adapt M3 to data-layer `v1.6` DTO: `combat.feed[].is_my_kill`, `combat.feed[].is_my_death`, `/api/identity`, `replay: true`, and overheat/failure field mapping.
-2. Run the remaining real-machine/data-layer/dry_run seams from `docs/真机验证-checklist.md`, focusing on overheat/failure, identity, replay, and free-text event paths.
+1. Continue M3 adaptation to data-layer `v1.6` DTO: `combat.feed[].is_my_kill`, `combat.feed[].is_my_death`, `/api/identity`, `replay: true`, and the remaining failure-field strategy.
+2. Run the remaining real-machine/data-layer/dry_run seams from `docs/真机验证-checklist.md`, focusing on overheat HUD notice revalidation, identity, replay, and free-text event paths.
 3. Capture `contract/telemetry_sample.json` from a real `/api/telemetry` response.
 4. Only after M3 + real-machine dry_run pass, consider formal kill/death/hudmsg/combat.feed/awards speech through T-Safety.
 5. Keep T3/L8 data-layer subprocess orchestration for a later runtime pass.

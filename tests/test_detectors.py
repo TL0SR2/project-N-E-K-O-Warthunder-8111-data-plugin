@@ -7,6 +7,7 @@ from neko_warthunder.core import contracts as C
 from neko_warthunder.detectors._base import ConditionDetector, DetectorEngine
 from neko_warthunder.detectors.condition.flight_safety import build_condition_detectors
 from neko_warthunder.detectors.discrete.lifecycle import DeathDetector, KillDetector, SpawnDetector
+from neko_warthunder.detectors.discrete.notices import HudNoticeDetector
 
 
 def _st(flags=None):
@@ -175,3 +176,47 @@ def test_replay_telemetry_suppresses_detector_events():
     cur = parse_telemetry(payload)
     engine = DetectorEngine(list(build_condition_detectors()) + [DeathDetector()])
     assert engine.feed(prev, cur) == []
+
+
+def test_hud_notice_overheat_emits_safe_overheat_event_once():
+    det = HudNoticeDetector()
+    prev = C.BattleState(in_battle=True, vehicle_valid=True)
+    cur = C.BattleState(
+        in_battle=True,
+        vehicle_valid=True,
+        timestamp=200.0,
+        hud_notices=[
+            {
+                "id": 7,
+                "code": "engine_overheat",
+                "severity": "warning",
+                "text": "水温过高 raw text must not enter payload",
+            }
+        ],
+    )
+    ev = det.feed(prev, cur)
+    assert ev is not None
+    assert ev.event_id == "overheat"
+    assert ev.level == "warning"
+    assert ev.payload == {"source": "hud_notice", "notice_code": "engine_overheat"}
+    assert det.feed(cur, cur) is None
+
+
+def test_hud_notice_powertrain_failure_is_not_promoted_to_speech_event_yet():
+    det = HudNoticeDetector()
+    cur = C.BattleState(
+        in_battle=True,
+        vehicle_valid=True,
+        hud_notices=[{"id": 8, "code": "powertrain_failure", "severity": "critical", "text": "动力系统故障"}],
+    )
+    assert det.feed(C.BattleState(in_battle=True, vehicle_valid=True), cur) is None
+
+
+def test_hud_notice_overheat_requires_live_vehicle():
+    det = HudNoticeDetector()
+    cur = C.BattleState(
+        in_battle=True,
+        vehicle_valid=False,
+        hud_notices=[{"id": 9, "code": "oil_overheat", "severity": "warning", "text": "油温过高"}],
+    )
+    assert det.feed(C.BattleState(in_battle=True, vehicle_valid=True), cur) is None

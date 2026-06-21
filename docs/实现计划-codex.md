@@ -11,7 +11,7 @@
 - T4 集成测试已完成。
 - Hosted UI surface/context/action smoke 已通过。
 - T-Safety output text sanitizer 已完成。
-- 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `42/42 passed` 为准。
+- 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `62/62 passed` 为准。
 - 数据层 `v1.6` 已合并，包含：
   - `overspeed_warn` / `overspeed_critical`
   - enhanced `combat.feed`
@@ -35,10 +35,10 @@
 ## 分层状态
 
 - L0 plugin scaffold / contracts：完成；`contract/telemetry_sample.json` 仍待真机抓取。
-- L1 telemetry client：完成基础解析；需要适配/验证 data-layer `v1.6` 新字段与 replay 降级。
+- L1 telemetry client：完成基础解析；已纳入 `hud_notices.feed`，仍需要适配/验证 data-layer `v1.6` 其他新字段与 replay 降级。
 - L2 BattleState：完成基础装配；需要纳入 v1.6 DTO seam 验证。
 - L3 Scenario：完成；需要确认 `replay: true` 下的静默/降级策略，以及 `you_died` 不再依赖 `vehicle_valid` 作为主信号。
-- L4 Detector：已实现主链路；`overspeed` 现在不再等待数据层，下一步是对接/验证 `overspeed_warn` / `overspeed_critical`；`you_killed` / `you_died` 下一步应消费 `combat.feed[].is_my_kill` / `combat.feed[].is_my_death`。
+- L4 Detector：已实现主链路；`overspeed` 现在不再等待数据层，下一步是对接/验证 `overspeed_warn` / `overspeed_critical`；`overheat` 已可消费 `hud_notices.feed[].code=engine_overheat/oil_overheat`；`you_killed` / `you_died` 下一步应消费 `combat.feed[].is_my_kill` / `combat.feed[].is_my_death`。
 - L5 Arbiter：完成；后续 M3 适配时要保持 cooldown、优先级、Scenario 门控语义不变。
 - L6 Dispatcher / instructions：完成基础输出；T-Safety 已在 prompt builder 前接入，prompt / `push_message.parts[].text` 不允许包含 unsafe raw。
 - L7 safety guard + Hosted UI：完成。
@@ -82,6 +82,7 @@
 - `you_died`：监听 `combat.feed[]` 中 `is_my_death == true` 的新 id。不要再把 `vehicle_valid` 跳变当作唯一可靠死亡信号。
 - `player_name`：通过 `/api/identity` 或启动参数建立权威身份；UI/config/runtime seam 仍需设计。
 - `replay: true`：插件侧应进入降级或静默，避免回放触发真实播报。
+- `overheat`：已接入 `hud_notices.feed[].code` 中的 `engine_overheat` / `oil_overheat`，以 code-only safe payload 生成现有 `overheat`；`powertrain_failure` 暂不直接播报。
 - `hud_notices` / `awards`：属于自由文本风险路径，真实播报前必须先过 T-Safety。
 
 ## 真机验证
@@ -94,7 +95,7 @@
 - `/api/telemetry.processed.flags` 是否出现 `overspeed_warn` / `overspeed_critical`。
 - `/api/telemetry.combat.feed[]` 是否含稳定递增 id、`is_my_kill`、`is_my_death`。
 - `/api/identity` 是否能由前端/配置设置权威 player_name。
-- `hud_notices` / `awards` 是否只进入 debug/audit 或被 T-Safety 阻断，不直接进入 prompt。
+- `hud_notices` 中的技术 code 是否能触发安全事件；raw notice 文本、`awards` 是否只进入 debug/audit 或被 T-Safety 阻断，不直接进入 prompt。
 
 ## 推进顺序
 
@@ -111,5 +112,5 @@
 - 不要把自由文本过滤塞进 Detector / Scenario / Arbiter。
 - 不要复活旧的 `vehicle_valid` 作为 `you_died` 主路径。
 - 不要把 recovery 作为 v1 当前任务；它只保留测试方案和 TODO。
-- 不要沿用旧的 pre-T-Safety 测试数量；当前逻辑自检应以 `42/42 passed` 为准。
+- 不要沿用旧的 pre-T-Safety 测试数量；当前逻辑自检应以 `62/62 passed` 为准。
 - 不要在父仓库 `N.E.K.O` 里提交这个独立插件仓库。
