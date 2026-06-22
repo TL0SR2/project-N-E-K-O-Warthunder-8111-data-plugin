@@ -205,3 +205,28 @@ def test_sample_replay_reports_safe_coverage_gaps_without_raw_text():
     assert "LegacyKiller" not in text
     assert "LegacyVictim" not in text
     assert "unsafe notice" not in text
+
+
+def test_local_20260620_sample_replay_if_present():
+    from neko_warthunder.tools.sample_replay import replay_sample_root
+
+    sample_root = Path(__file__).resolve().parent.parent / "local_samples" / "data_process_20260620"
+    if not sample_root.exists():
+        return
+
+    report = replay_sample_root(sample_root, player_name="tl0sr2")
+
+    assert report["frames"] == 10443
+    assert report["coverage"]["combat_self_source"]["manual"] == 1501
+    assert report["coverage"]["awards_items"] == 1932
+    assert report["flags"]["overspeed_warn"] == 2
+    assert report["coverage"]["hud_notice_codes"]["engine_overheat"] == 414
+    assert "no_manual_identity_frames" not in report["coverage_gaps"]
+    assert report["coverage_gaps"] == [
+        "no_replay_true_frames",
+        "no_overspeed_critical_flags",
+        "combat_feed_missing_ownership_fields",
+        "no_oil_overheat_notice_codes",
+        "no_powertrain_failure_notice_codes",
+        "hud_notice_severity_unknown",
+    ]
