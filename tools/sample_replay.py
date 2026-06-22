@@ -200,6 +200,16 @@ def _coverage_gaps(report: dict[str, Any]) -> list[str]:
         and coverage.get("involves_me_field", 0) == 0
     ):
         gaps.append("combat_feed_missing_ownership_fields")
+    elif (
+        coverage.get("is_my_kill_field", 0) > 0
+        or coverage.get("is_my_death_field", 0) > 0
+        or coverage.get("involves_me_field", 0) > 0
+    ) and (
+        coverage.get("is_my_kill_true", 0) == 0
+        and coverage.get("is_my_death_true", 0) == 0
+        and coverage.get("involves_me_true", 0) == 0
+    ):
+        gaps.append("combat_feed_no_ownership_true_frames")
     combat_self_source = coverage.get("combat_self_source") or {}
     if combat_self_source.get("manual", 0) == 0:
         gaps.append("no_manual_identity_frames")

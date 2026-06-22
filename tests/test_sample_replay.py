@@ -207,6 +207,27 @@ def test_sample_replay_reports_safe_coverage_gaps_without_raw_text():
     assert "unsafe notice" not in text
 
 
+def test_sample_replay_reports_ownership_fields_without_true_hits_as_gap():
+    from neko_warthunder.tools.sample_replay import replay_sample_root, render_report
+
+    frame = _coverage_frame()
+    frame["combat"]["feed"] = [
+        {"id": 30, "is_my_kill": False, "is_my_death": False, "involves_me": False, "victim": "RawVictim"},
+    ]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write_jsonl(root / "captures" / "cap" / "processed_8112.jsonl", [{"data": frame}])
+
+        report = replay_sample_root(root, player_name="Pilot")
+        text = render_report(report)
+
+    assert "combat_feed_missing_ownership_fields" not in report["coverage_gaps"]
+    assert "combat_feed_no_ownership_true_frames" in report["coverage_gaps"]
+    assert "combat_feed_no_ownership_true_frames" in text
+    assert "RawVictim" not in text
+
+
 def test_local_20260620_sample_replay_if_present():
     from neko_warthunder.tools.sample_replay import replay_sample_root
 
