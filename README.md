@@ -64,6 +64,11 @@ War Thunder 猫娘副驾驶插件 v1。插件只消费本地数据层 HTTP `:811
 
 ```powershell
 uv run python tools\preflight.py --run
+```
+
+单项排障时再分别运行：
+
+```powershell
 uv run python tests/run_logic_tests.py
 uv run pytest -c tests\pytest.ini tests -q
 ```

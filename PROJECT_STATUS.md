@@ -42,7 +42,13 @@
 
 ## Verification
 
-Run from the standalone plugin repository root:
+Run the full offline gate from the standalone plugin repository root:
+
+```powershell
+uv run python tools\preflight.py --run
+```
+
+For single-check reruns or troubleshooting:
 
 ```powershell
 uv run python tests/run_logic_tests.py
@@ -51,6 +57,7 @@ uv run pytest -c tests\pytest.ini tests -q
 
 Notes:
 
+- `tools/preflight.py --run` also runs plugin check, synthetic replay, and local sample replay when the relevant local paths exist.
 - `tests/run_logic_tests.py` is the no-host logic self-check and should report `78/78 passed`.
 - The standalone pytest entry uses `tests/pytest.ini` so pytest does not import the host SDK-dependent plugin entrypoint while collecting tests.
 - If an older handoff note still shows the pre-T4 test count, treat it as stale unless it explicitly refers to an older test entry point.
