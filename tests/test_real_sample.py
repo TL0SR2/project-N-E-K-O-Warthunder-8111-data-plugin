@@ -3,7 +3,7 @@
 用法：
 - 抓 raw 样本：`curl http://localhost:8112/api/telemetry > local_samples/live_current/telemetry_sample.json`
 - 只有脱敏后的样本才允许更新 `contract/telemetry_sample.json`。
-- 看报告：`uv run python plugin/plugins/neko_warthunder/tests/test_real_sample.py`
+- 看报告：`uv run python tests/test_real_sample.py`
 - 或随单测一起跑（无样本则跳过，不报失败）。
 """
 

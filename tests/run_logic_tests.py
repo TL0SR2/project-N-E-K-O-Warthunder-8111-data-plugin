@@ -1,8 +1,8 @@
 """无依赖逻辑测试运行器（不需 NEKO 宿主环境 / 不走 plugin 包链）。
 
-用法：uv run python plugin/plugins/neko_warthunder/tests/run_logic_tests.py
+用法：uv run python tests/run_logic_tests.py
 把 neko_warthunder 注册为轻量顶层包，按文件路径加载 test_*.py 并执行其 test_* 函数。
-（标准 CI 仍可 `uv run pytest plugin/plugins/neko_warthunder/tests`，conftest 做同样的桩。）
+（标准 CI 仍可 `uv run pytest -c tests/pytest.ini tests -q`，conftest 做同样的桩。）
 """
 
 from __future__ import annotations

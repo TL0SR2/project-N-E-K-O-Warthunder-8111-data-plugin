@@ -1,6 +1,6 @@
 """把 neko_warthunder 的纯逻辑子包注册成轻量顶层包，绕开会拉 SDK/宿主的包 __init__。
 
-这样单测无需 NEKO 宿主环境即可跑（`python3 -m pytest plugin/plugins/neko_warthunder/tests`），
+这样单测无需 NEKO 宿主环境即可跑（`uv run pytest -c tests/pytest.ini tests -q`），
 只测纯逻辑（contracts / scenario / detectors / arbiter / telemetry 解析）。
 """
 
