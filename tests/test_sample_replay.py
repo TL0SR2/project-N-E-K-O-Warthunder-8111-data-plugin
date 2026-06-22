@@ -72,7 +72,7 @@ def _coverage_frame() -> dict:
                 {"id": 12, "is_kill": True, "killer": "LegacyKiller", "victim": "LegacyVictim"},
             ],
         },
-        "hud_notices": {"feed": [{"id": 1, "code": "engine_overheat", "text": "raw notice"}]},
+        "hud_notices": {"feed": [{"id": 1, "code": "engine_overheat", "severity": "critical", "text": "raw notice"}]},
         "awards": {"feed": [{"id": 1, "code": "final_blow", "text": "raw award"}]},
     }
 
@@ -156,6 +156,7 @@ def test_sample_replay_reports_safe_contract_coverage_without_raw_text():
     assert coverage["combat_self_source"]["manual"] == 1
     assert coverage["active_players_max"] == 2
     assert coverage["hud_notice_codes"]["engine_overheat"] == 1
+    assert coverage["hud_notice_severities"]["critical"] == 1
     assert coverage["awards_items"] == 1
     assert "coverage:" in text
     assert "RawVictim" not in text

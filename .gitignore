@@ -2,6 +2,8 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.egg-info/
+.pytest_cache/
+store.db
 
 .venv/
 venv/
@@ -13,3 +15,4 @@ Thumbs.db
 
 data_layer/data process/maps/
 data_layer/data process/_*.py
+local_samples/

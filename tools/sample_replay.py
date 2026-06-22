@@ -99,6 +99,7 @@ def replay_sample_root(root: str | pathlib.Path, *, player_name: str = "") -> di
             "combat_self_source": Counter(),
             "active_players_max": 0,
             "hud_notice_codes": Counter(),
+            "hud_notice_severities": Counter(),
             "awards_items": 0,
         },
     }
@@ -169,6 +170,7 @@ def _record_coverage(coverage: dict[str, Any], payload: dict[str, Any]) -> None:
     for item in notice_feed:
         if isinstance(item, dict):
             coverage["hud_notice_codes"][str(item.get("code") or "unknown")] += 1
+            coverage["hud_notice_severities"][str(item.get("severity") or "unknown")] += 1
 
     awards = payload.get("awards") if isinstance(payload.get("awards"), dict) else {}
     awards_feed = awards.get("feed") if isinstance(awards.get("feed"), list) else []
@@ -226,6 +228,7 @@ def _fmt_coverage(coverage: dict[str, Any]) -> str:
         parts.append(f"{key}={coverage.get(key, 0)}")
     parts.append(f"combat_self_source={_fmt_counts(coverage.get('combat_self_source') or {})}")
     parts.append(f"hud_notice_codes={_fmt_counts(coverage.get('hud_notice_codes') or {})}")
+    parts.append(f"hud_notice_severities={_fmt_counts(coverage.get('hud_notice_severities') or {})}")
     return ", ".join(parts)
 
 
