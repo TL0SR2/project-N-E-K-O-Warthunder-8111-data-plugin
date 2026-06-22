@@ -77,6 +77,16 @@ def _coverage_frame() -> dict:
     }
 
 
+def _coverage_gap_frame() -> dict:
+    frame = _coverage_frame()
+    frame.pop("replay", None)
+    frame["combat"]["feed"] = [
+        {"id": 20, "is_kill": True, "killer": "LegacyKiller", "victim": "LegacyVictim", "raw": "unsafe raw feed"},
+    ]
+    frame["hud_notices"] = {"feed": [{"id": 2, "code": "engine_overheat", "text": "unsafe notice"}]}
+    return frame
+
+
 def test_sample_replay_discovers_processed_jsonl_and_gzip_frames():
     from neko_warthunder.tools.sample_replay import discover_sample_files
 
@@ -163,3 +173,24 @@ def test_sample_replay_reports_safe_contract_coverage_without_raw_text():
     assert "RawKiller" not in text
     assert "raw notice" not in text
     assert "raw award" not in text
+
+
+def test_sample_replay_reports_safe_coverage_gaps_without_raw_text():
+    from neko_warthunder.tools.sample_replay import replay_sample_root, render_report
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write_jsonl(root / "captures" / "cap" / "processed_8112.jsonl", [{"data": _coverage_gap_frame()}])
+
+        report = replay_sample_root(root, player_name="Pilot")
+        text = render_report(report)
+
+    assert report["coverage_gaps"] == [
+        "no_replay_true_frames",
+        "combat_feed_missing_ownership_fields",
+        "hud_notice_severity_unknown",
+    ]
+    assert "coverage_gaps: no_replay_true_frames, combat_feed_missing_ownership_fields, hud_notice_severity_unknown" in text
+    assert "LegacyKiller" not in text
+    assert "LegacyVictim" not in text
+    assert "unsafe notice" not in text

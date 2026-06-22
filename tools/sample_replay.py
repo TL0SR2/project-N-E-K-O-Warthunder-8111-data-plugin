@@ -182,7 +182,25 @@ def _plain_report(report: dict[str, Any]) -> dict[str, Any]:
     for key in ("states", "domains", "flags", "events", "chosen", "dry_run_outputs"):
         plain[key] = dict(report[key])
     plain["coverage"] = _plain_value(report["coverage"])
+    plain["coverage_gaps"] = _coverage_gaps(plain["coverage"])
     return plain
+
+
+def _coverage_gaps(coverage: dict[str, Any]) -> list[str]:
+    gaps: list[str] = []
+    if coverage.get("replay_true", 0) == 0:
+        gaps.append("no_replay_true_frames")
+    if coverage.get("combat_feed_items", 0) > 0 and (
+        coverage.get("is_my_kill_field", 0) == 0
+        and coverage.get("is_my_death_field", 0) == 0
+        and coverage.get("involves_me_field", 0) == 0
+    ):
+        gaps.append("combat_feed_missing_ownership_fields")
+
+    severities = coverage.get("hud_notice_severities") or {}
+    if severities and set(severities) == {"unknown"}:
+        gaps.append("hud_notice_severity_unknown")
+    return gaps
 
 
 def _plain_value(value: Any) -> Any:
@@ -205,6 +223,7 @@ def render_report(report: dict[str, Any]) -> str:
         f"chosen_events: {_fmt_counts(report['chosen'])}",
         f"dry_run_outputs: {_fmt_counts(report['dry_run_outputs'])}",
         f"coverage: {_fmt_coverage(report.get('coverage') or {})}",
+        f"coverage_gaps: {_fmt_list(report.get('coverage_gaps') or [])}",
     ]
     return "\n".join(lines)
 
@@ -236,6 +255,12 @@ def _fmt_counts(counts: dict[str, int]) -> str:
     if not counts:
         return "-"
     return ", ".join(f"{key}={value}" for key, value in sorted(counts.items()))
+
+
+def _fmt_list(values: list[str]) -> str:
+    if not values:
+        return "-"
+    return ", ".join(values)
 
 
 def main(argv: list[str]) -> int:
