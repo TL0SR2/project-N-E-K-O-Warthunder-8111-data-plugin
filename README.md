@@ -92,7 +92,7 @@ neko_warthunder/
 - 数据层代码只作为 vendored 目录保存，插件侧不要修改、不要 import。
 - `you_killed` / `you_died` 已消费 `combat.feed[].is_my_kill` / `combat.feed[].is_my_death`，后续重点是真机 dry_run 验证。
 - `tools/replay.py` 的内置合成场景已覆盖 v1.6 ownership 形状下的 `you_killed` / `you_died`。
-- `overspeed` 后续应验证并适配 `processed.flags` 中的 `overspeed_warn` / `overspeed_critical`。
+- `overspeed` 已接入 `processed.flags` 中的 `overspeed_warn` / `overspeed_critical`；后续重点是真机验证触发节奏、critical 档位和 Arbiter 抢占语义。
 - 过热/炸缸真机 smoke 中，游戏 UI 已出现油温/发动机异常；插件侧已补 `hud_notices.feed[].code=engine_overheat/oil_overheat` 到 `overheat` 的映射，后续仍需真机复测；`powertrain_failure` 暂不直接提升为播报事件。
 - `replay: true` 已在 Detector 层静默并 reset，避免回放数据触发真实播报；后续需要真实 replay 样本验证。
 - `/api/identity` 是 player_name 的主路径；插件侧 Hosted UI/context/action 接缝已完成，后续需要真机验证 `combat.self` 与 `is_my_kill` / `is_my_death` 是否按手动昵称生效。

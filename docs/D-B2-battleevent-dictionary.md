@@ -8,7 +8,7 @@
 
 - 已重画边界：消费数据层 `/api/processed.flags` 作为"条件已成立"信号，详见 **D-B5 v0.2 映射表（权威）**。本字典的 severity/priority/cooldown/scenario/抢占/去重仍是**我们这层**的职责，不变。
 - **`steep_dive` 已删除**（v1 砍、留 v2）：本文相关条目作废。
-- **`overspeed` 来源改为数据层 flag `overspeed_warn` / `overspeed_critical`**，不再由我们算阈值。数据层 v1.6 已提供，插件侧待适配/真机验证。
+- **`overspeed` 来源改为数据层 flag `overspeed_warn` / `overspeed_critical`**，不再由我们算阈值。数据层 v1.6 已提供，插件侧已接入；后续重点是真机验证触发节奏、critical 档位和 Arbiter 抢占语义。
 - **`overheat` 除数据层 flag 外，也可消费 `hud_notices.feed[].code=engine_overheat/oil_overheat`**。HUD notice 只使用安全 code，不把 raw 文本带入 prompt；`powertrain_failure` 暂不直接提升为播报事件。
 - 各连续事件"来源 Detector/信号"统一改读上游 flag（见 D-B3 v0.2 / D-B5 映射）；下方各条仍写原始字段，仅作 payload/语义参考。
 - **两级 severity（待你确认）**：数据层给 warning/critical；建议 critical→高 severity 可抢占、warning→中 severity，推翻早期"单级"暂定。

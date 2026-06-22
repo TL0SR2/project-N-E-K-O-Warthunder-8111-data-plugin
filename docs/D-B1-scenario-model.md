@@ -7,7 +7,7 @@
 ## v0.2 边界更新（汇合后）
 
 - 模型不变；唯一变化是**危急/重要提醒 flag 改由数据层 `/api/processed` 提供**（我们消费，不自己算阈值，见 D-B5 v0.2）。
-- CRITICAL_RISK 危急集合 = 数据层 critical 级安全 flag 中我们的子集：`stall_critical`、`altitude_critical`、`overspeed_critical`。数据层 v1.6 已提供 `overspeed_critical`，插件侧待适配/真机验证。
+- CRITICAL_RISK 危急集合 = 数据层 critical 级安全 flag 中我们的子集：`stall_critical`、`altitude_critical`、`overspeed_critical`。数据层 v1.6 已提供 `overspeed_critical`，插件侧已接入，仍需真机验证触发节奏和 Arbiter 抢占语义。
 - COMBAT_STRESS 的"最近受创"信号取数据层 `hud_events`（关于我的 damage）。
 
 ## 0. 设计约束（先钉死边界）
