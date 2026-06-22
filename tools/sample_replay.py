@@ -87,6 +87,17 @@ def replay_sample_root(root: str | pathlib.Path, *, player_name: str = "") -> di
         "chosen": Counter(),
         "dry_run_outputs": Counter(),
         "sample_files": [str(p.relative_to(root)) if pathlib.Path(root) in p.parents else str(p) for p in files],
+        "coverage": {
+            "replay_true": 0,
+            "combat_feed_items": 0,
+            "is_my_kill_true": 0,
+            "is_my_death_true": 0,
+            "involves_me_true": 0,
+            "combat_self_source": Counter(),
+            "active_players_max": 0,
+            "hud_notice_codes": Counter(),
+            "awards_items": 0,
+        },
     }
 
     prev = BattleState()
@@ -95,6 +106,7 @@ def replay_sample_root(root: str | pathlib.Path, *, player_name: str = "") -> di
         for row in _iter_jsonl(path):
             payload = _unwrap_payload(row)
             cur = parse_telemetry(payload)
+            _record_coverage(report["coverage"], payload)
             report["frames"] += 1
             report["states"][cur.conn_state] += 1
             report["domains"][cur.domain] += 1
@@ -119,11 +131,55 @@ def replay_sample_root(root: str | pathlib.Path, *, player_name: str = "") -> di
     return _plain_report(report)
 
 
+def _record_coverage(coverage: dict[str, Any], payload: dict[str, Any]) -> None:
+    if payload.get("replay") is True:
+        coverage["replay_true"] += 1
+
+    combat = payload.get("combat") if isinstance(payload.get("combat"), dict) else {}
+    feed = combat.get("feed") if isinstance(combat.get("feed"), list) else []
+    coverage["combat_feed_items"] += len(feed)
+    for item in feed:
+        if not isinstance(item, dict):
+            continue
+        if item.get("is_my_kill") is True:
+            coverage["is_my_kill_true"] += 1
+        if item.get("is_my_death") is True:
+            coverage["is_my_death_true"] += 1
+        if item.get("involves_me") is True:
+            coverage["involves_me_true"] += 1
+
+    self_info = combat.get("self") if isinstance(combat.get("self"), dict) else None
+    if self_info:
+        coverage["combat_self_source"][str(self_info.get("source") or "unknown")] += 1
+
+    active_players = combat.get("active_players") if isinstance(combat.get("active_players"), list) else []
+    coverage["active_players_max"] = max(coverage["active_players_max"], len(active_players))
+
+    notices = payload.get("hud_notices") if isinstance(payload.get("hud_notices"), dict) else {}
+    notice_feed = notices.get("feed") if isinstance(notices.get("feed"), list) else []
+    for item in notice_feed:
+        if isinstance(item, dict):
+            coverage["hud_notice_codes"][str(item.get("code") or "unknown")] += 1
+
+    awards = payload.get("awards") if isinstance(payload.get("awards"), dict) else {}
+    awards_feed = awards.get("feed") if isinstance(awards.get("feed"), list) else []
+    coverage["awards_items"] += len(awards_feed)
+
+
 def _plain_report(report: dict[str, Any]) -> dict[str, Any]:
     plain = dict(report)
     for key in ("states", "domains", "flags", "events", "chosen", "dry_run_outputs"):
         plain[key] = dict(report[key])
+    plain["coverage"] = _plain_value(report["coverage"])
     return plain
+
+
+def _plain_value(value: Any) -> Any:
+    if isinstance(value, Counter):
+        return dict(value)
+    if isinstance(value, dict):
+        return {k: _plain_value(v) for k, v in value.items()}
+    return value
 
 
 def render_report(report: dict[str, Any]) -> str:
@@ -137,8 +193,28 @@ def render_report(report: dict[str, Any]) -> str:
         f"candidate_events: {_fmt_counts(report['events'])}",
         f"chosen_events: {_fmt_counts(report['chosen'])}",
         f"dry_run_outputs: {_fmt_counts(report['dry_run_outputs'])}",
+        f"coverage: {_fmt_coverage(report.get('coverage') or {})}",
     ]
     return "\n".join(lines)
+
+
+def _fmt_coverage(coverage: dict[str, Any]) -> str:
+    if not coverage:
+        return "-"
+    parts: list[str] = []
+    for key in (
+        "replay_true",
+        "combat_feed_items",
+        "is_my_kill_true",
+        "is_my_death_true",
+        "involves_me_true",
+        "active_players_max",
+        "awards_items",
+    ):
+        parts.append(f"{key}={coverage.get(key, 0)}")
+    parts.append(f"combat_self_source={_fmt_counts(coverage.get('combat_self_source') or {})}")
+    parts.append(f"hud_notice_codes={_fmt_counts(coverage.get('hud_notice_codes') or {})}")
+    return ", ".join(parts)
 
 
 def _fmt_counts(counts: dict[str, int]) -> str:

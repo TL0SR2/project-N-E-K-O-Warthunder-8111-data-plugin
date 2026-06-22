@@ -1,6 +1,6 @@
 # 真机验证 checklist
 
-> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、identity Hosted UI/action 接缝已完成；逻辑自检以 `66/66 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
+> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、identity Hosted UI/action 接缝已完成；逻辑自检以 `67/67 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
 
 ## 已完成的 Hosted UI Smoke
 
@@ -49,7 +49,7 @@
    uv run python tests/run_logic_tests.py
    ```
 
-   预期：`66/66 passed`。
+   预期：`67/67 passed`。
 
 3. 启动宿主后启动插件，确认 `status` / Hosted UI context 可返回状态。
 
@@ -83,6 +83,14 @@
    ```powershell
    curl http://localhost:8112/api/telemetry > contract/telemetry_sample.json
    ```
+
+   已留存的本地样本可先做离线覆盖率审计：
+
+   ```powershell
+   uv run python tools/sample_replay.py local_samples/data_process_20260620 tl0sr2
+   ```
+
+   重点看输出 `coverage:` 行里的 `is_my_kill_true` / `is_my_death_true` / `involves_me_true`、`combat_self_source`、`hud_notice_codes`、`awards_items`、`replay_true`。如果这些新归属字段为 0，说明该样本只能覆盖数值安全 / HUD notice 等路径，不能关闭 kill/death identity 验证项。
 
 3. 必查字段：
 

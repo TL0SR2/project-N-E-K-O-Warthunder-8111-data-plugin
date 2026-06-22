@@ -48,6 +48,34 @@ def _frame(flags: dict[str, bool], *, raw_text: str | None = None) -> dict:
     }
 
 
+def _coverage_frame() -> dict:
+    return {
+        "state": "in_battle",
+        "timestamp": 123.0,
+        "replay": True,
+        "in_battle": True,
+        "vehicle": {"valid": True, "ias_kmh": 300.0, "altitude_m": 1000.0},
+        "indicators": {"valid": True, "vehicle_type": "ki_61_1a_otsu_china", "army": "air"},
+        "processed": {
+            "flags": {"engine_overheat": True},
+            "level": "warning",
+            "ias_kmh": 300.0,
+            "altitude_m": 1000.0,
+        },
+        "combat": {
+            "player_name": "Pilot",
+            "self": {"name": "Pilot", "source": "manual", "confidence": 1.0},
+            "active_players": [{"name": "Pilot"}, {"name": "Other"}],
+            "feed": [
+                {"id": 10, "is_my_kill": True, "is_my_death": False, "involves_me": True, "victim": "RawVictim"},
+                {"id": 11, "is_my_kill": False, "is_my_death": True, "involves_me": True, "killer": "RawKiller"},
+            ],
+        },
+        "hud_notices": {"feed": [{"id": 1, "code": "engine_overheat", "text": "raw notice"}]},
+        "awards": {"feed": [{"id": 1, "code": "final_blow", "text": "raw award"}]},
+    }
+
+
 def test_sample_replay_discovers_processed_jsonl_and_gzip_frames():
     from neko_warthunder.tools.sample_replay import discover_sample_files
 
@@ -103,3 +131,30 @@ def test_sample_replay_summary_never_contains_unsafe_raw_text():
     assert "you_killed" in text
     assert unsafe not in text
     assert "raw" not in text.lower()
+
+
+def test_sample_replay_reports_safe_contract_coverage_without_raw_text():
+    from neko_warthunder.tools.sample_replay import replay_sample_root, render_report
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write_jsonl(root / "captures" / "cap" / "processed_8112.jsonl", [{"data": _coverage_frame()}])
+
+        report = replay_sample_root(root, player_name="Pilot")
+        text = render_report(report)
+
+    coverage = report["coverage"]
+    assert coverage["replay_true"] == 1
+    assert coverage["combat_feed_items"] == 2
+    assert coverage["is_my_kill_true"] == 1
+    assert coverage["is_my_death_true"] == 1
+    assert coverage["involves_me_true"] == 2
+    assert coverage["combat_self_source"]["manual"] == 1
+    assert coverage["active_players_max"] == 2
+    assert coverage["hud_notice_codes"]["engine_overheat"] == 1
+    assert coverage["awards_items"] == 1
+    assert "coverage:" in text
+    assert "RawVictim" not in text
+    assert "RawKiller" not in text
+    assert "raw notice" not in text
+    assert "raw award" not in text
