@@ -200,6 +200,9 @@ def _coverage_gaps(report: dict[str, Any]) -> list[str]:
         and coverage.get("involves_me_field", 0) == 0
     ):
         gaps.append("combat_feed_missing_ownership_fields")
+    combat_self_source = coverage.get("combat_self_source") or {}
+    if combat_self_source.get("manual", 0) == 0:
+        gaps.append("no_manual_identity_frames")
     if coverage.get("awards_items", 0) == 0:
         gaps.append("no_awards_items")
 
