@@ -48,6 +48,7 @@
 
    ```powershell
    uv run python tests/run_logic_tests.py
+   uv run pytest -c tests\pytest.ini tests -q
    ```
 
    预期：`71/71 passed`。

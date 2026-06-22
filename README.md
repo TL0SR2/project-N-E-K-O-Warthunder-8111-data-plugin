@@ -60,7 +60,7 @@ War Thunder 猫娘副驾驶插件 v1。插件只消费本地数据层 HTTP `:811
 
 ```powershell
 uv run python tests/run_logic_tests.py
-uv run pytest tests -q
+uv run pytest -c tests\pytest.ini tests -q
 ```
 
 从 N.E.K.O 宿主仓库内做插件检查时，使用宿主路径：
