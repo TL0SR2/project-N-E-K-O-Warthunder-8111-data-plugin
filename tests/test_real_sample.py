@@ -57,5 +57,25 @@ def test_real_sample_if_present():
         assert s.conn_state == "in_battle"
 
 
+def test_contract_telemetry_sample_is_sanitized_v16_shape():
+    assert _SAMPLE.exists()
+    payload = json.loads(_SAMPLE.read_text(encoding="utf-8"))
+
+    s = parse_telemetry(payload)
+
+    assert s.connected is True
+    assert s.in_battle is True
+    assert s.conn_state == "in_battle"
+    assert s.domain == "air"
+    assert s.vehicle_valid is True
+    assert s.flag("overspeed_warn") is True
+    assert s.combat["self"]["source"] == "manual"
+    assert s.hud_notices[0]["code"] == "engine_overheat"
+    assert payload["awards"]["feed"][0]["code"] == "final_blow"
+    assert "raw" not in payload
+    assert "text" not in payload["hud_notices"]["feed"][0]
+    assert "text" not in payload["awards"]["feed"][0]
+
+
 if __name__ == "__main__":
     print(_report())
