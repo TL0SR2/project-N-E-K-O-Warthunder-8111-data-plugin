@@ -190,10 +190,12 @@ def test_sample_replay_reports_safe_coverage_gaps_without_raw_text():
         "no_overspeed_critical_flags",
         "combat_feed_missing_ownership_fields",
         "no_oil_overheat_notice_codes",
+        "no_powertrain_failure_notice_codes",
         "hud_notice_severity_unknown",
     ]
     assert "no_overspeed_critical_flags" in text
     assert "no_oil_overheat_notice_codes" in text
+    assert "no_powertrain_failure_notice_codes" in text
     assert "LegacyKiller" not in text
     assert "LegacyVictim" not in text
     assert "unsafe notice" not in text

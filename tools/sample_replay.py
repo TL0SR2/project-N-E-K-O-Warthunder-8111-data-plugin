@@ -204,6 +204,8 @@ def _coverage_gaps(report: dict[str, Any]) -> list[str]:
     notice_codes = coverage.get("hud_notice_codes") or {}
     if notice_codes and notice_codes.get("oil_overheat", 0) == 0:
         gaps.append("no_oil_overheat_notice_codes")
+    if notice_codes and notice_codes.get("powertrain_failure", 0) == 0:
+        gaps.append("no_powertrain_failure_notice_codes")
     severities = coverage.get("hud_notice_severities") or {}
     if severities and set(severities) == {"unknown"}:
         gaps.append("hud_notice_severity_unknown")
