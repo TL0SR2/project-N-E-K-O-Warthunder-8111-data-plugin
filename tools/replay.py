@@ -2,7 +2,7 @@
 
 无需 NEKO 宿主 / 游戏。两种数据源：
 - 默认：内置合成场景（出生→巡航→濒临失速[critical 抢占]→低油→击杀→阵亡→重生→战斗结束）。
-- 文件：`python3 tools/replay.py path/to/frames.json`，frames.json = /api/telemetry 帧的 JSON 数组（真机抓的）。
+- 文件：`uv run python tools/replay.py path/to/frames.json`，frames.json = /api/telemetry 帧的 JSON 数组（真机抓的）。
 
 用途：离线验证决策行为；将来用真机帧序列做回归 / 调参（看决策链路）。
 """
@@ -53,9 +53,10 @@ def _synthetic() -> list[C.BattleState]:
     t += _rep(_alive(ias_kmh=170, aoa_deg=19, altitude_m=500, flags={"stall_critical": True}), 4)  # 濒临失速(critical→抢占)
     t += _rep(_alive(ias_kmh=330), 6)                                                          # 改出
     t += _rep(_alive(ias_kmh=300, fuel_fraction=0.1, flags={"fuel_low": True}), 4)             # 低油(warning)
-    t += [_alive(ias_kmh=300, combat={"player_name": "Me", "feed": [{"id": 1, "is_kill": True, "killer": "Me", "victim": "Bandit(Spitfire)"}]})]  # 击杀
+    t += [_alive(ias_kmh=300, combat={"player_name": "Me", "feed": [{"id": 1, "is_kill": True, "is_my_kill": True, "is_my_death": False, "involves_me": True, "killer": "Me", "victim": "Bandit", "victim_vehicle": "Spitfire"}]})]  # 击杀
     t += _rep(_alive(ias_kmh=300), 4)
-    t += _rep(C.BattleState(connected=True, conn_state="in_battle", in_battle=True, vehicle_valid=False), 2)  # 阵亡
+    t += [C.BattleState(connected=True, conn_state="in_battle", in_battle=True, vehicle_valid=False, combat={"player_name": "Me", "feed": [{"id": 2, "is_my_kill": False, "is_my_death": True, "involves_me": True, "killer": "Bandit", "killer_vehicle": "Yak-3", "action": "shot_down"}]})]  # 阵亡
+    t += _rep(C.BattleState(connected=True, conn_state="in_battle", in_battle=True, vehicle_valid=False), 1)
     t += _rep(_alive(ias_kmh=250), 8)                                                          # 重生
     t += _rep(_alive(ias_kmh=300, mission_status="win"), 2)                                    # 战斗结束
     return t

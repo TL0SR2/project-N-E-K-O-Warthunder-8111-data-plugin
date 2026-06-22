@@ -6,7 +6,7 @@ War Thunder 猫娘副驾驶插件 v1。插件只消费本地数据层 HTTP `:811
 
 - M1 scaffold + M2 Battle Awareness 主链路已实现。
 - T1A Hosted UI Integration + T1B Minimal Panel 已完成，surface/context/action smoke 已通过。
-- T4 集成测试已完成；T-Safety output text sanitizer 已完成；T-Observe runtime decision timeline 已完成轻量实现；`/api/identity` Hosted UI/action 接缝已完成；当前逻辑自检以 `74/74 passed` 为准。
+- T4 集成测试已完成；T-Safety output text sanitizer 已完成；T-Observe runtime decision timeline 已完成轻量实现；`/api/identity` Hosted UI/action 接缝已完成；当前逻辑自检以 `75/75 passed` 为准。
 - 2026-06-21 真机 `dry_run` smoke 已通过：Hosted UI context/action、pause/resume 安全门、stall/low_alt 决策链路、dry_run dispatcher 输出均正常。
 - 数据层 `v1.6` 已合并到当前独立插件仓库，包含 `overspeed_warn` / `overspeed_critical`、增强 `combat.feed`、`is_my_kill` / `is_my_death`、`/api/identity`、`replay: true` 降级、`hud_notices`、`awards`。
 - 数据层字段缺口不再是“等待字段补齐”，现在是插件侧继续适配 `v1.6` DTO、待真机接缝验证。
@@ -34,7 +34,7 @@ War Thunder 猫娘副驾驶插件 v1。插件只消费本地数据层 HTTP `:811
 当前状态：
 - Hosted UI 完成。
 - T4 集成测试完成。
-- 逻辑自检 74/74 passed。
+- 逻辑自检 75/75 passed。
 - 数据层 v1.6 已合并，插件侧已分项接入 kill/death、identity、replay 静默和 overheat HUD notice，仍需真机接缝验证。
 - 合作者 2026-06-20 真实样本已做离线 replay 聚合报告，可先看 `docs/样本回放-20260620.md` 判断哪些缺口仍需下次真机补测。
 - 真机 dry_run smoke 已完成一轮；过热/炸缸已补 `hud_notices` code 接入，仍需真机复测。
@@ -90,6 +90,7 @@ neko_warthunder/
 
 - 数据层代码只作为 vendored 目录保存，插件侧不要修改、不要 import。
 - `you_killed` / `you_died` 已消费 `combat.feed[].is_my_kill` / `combat.feed[].is_my_death`，后续重点是真机 dry_run 验证。
+- `tools/replay.py` 的内置合成场景已覆盖 v1.6 ownership 形状下的 `you_killed` / `you_died`。
 - `overspeed` 后续应验证并适配 `processed.flags` 中的 `overspeed_warn` / `overspeed_critical`。
 - 过热/炸缸真机 smoke 中，游戏 UI 已出现油温/发动机异常；插件侧已补 `hud_notices.feed[].code=engine_overheat/oil_overheat` 到 `overheat` 的映射，后续仍需真机复测；`powertrain_failure` 暂不直接提升为播报事件。
 - `replay: true` 已在 Detector 层静默并 reset，避免回放数据触发真实播报；后续需要真实 replay 样本验证。

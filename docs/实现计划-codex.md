@@ -12,7 +12,7 @@
 - Hosted UI surface/context/action smoke 已通过。
 - T-Safety output text sanitizer 已完成。
 - T-Observe runtime decision timeline 已完成轻量实现：普通模式只保留最近摘要，debug 模式使用内存 ring buffer。
-- 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `74/74 passed` 为准。
+- 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `75/75 passed` 为准。
 - 数据层 `v1.6` 已合并，包含：
   - `overspeed_warn` / `overspeed_critical`
   - enhanced `combat.feed`
@@ -39,7 +39,7 @@
 - L1 telemetry client：完成基础解析；已纳入 `hud_notices.feed` 与 `replay`，仍需要验证 data-layer `v1.6` 其他新字段。
 - L2 BattleState：完成基础装配；需要纳入 v1.6 DTO seam 验证。
 - L3 Scenario：完成；`replay: true` 已在 DetectorEngine 静默并 reset，仍需真实 replay 样本验证。
-- L4 Detector：已实现主链路；`overspeed` 现在不再等待数据层，下一步是真机验证 `overspeed_warn` / `overspeed_critical`；`overheat` 已可消费 `hud_notices.feed[].code=engine_overheat/oil_overheat`；`you_killed` / `you_died` 已消费 `combat.feed[].is_my_kill` / `combat.feed[].is_my_death`。
+- L4 Detector：已实现主链路；`overspeed` 现在不再等待数据层，下一步是真机验证 `overspeed_warn` / `overspeed_critical`；`overheat` 已可消费 `hud_notices.feed[].code=engine_overheat/oil_overheat`；`you_killed` / `you_died` 已消费 `combat.feed[].is_my_kill` / `combat.feed[].is_my_death`，离线 replay 合成场景也已覆盖该形状。
 - L5 Arbiter：完成；后续 M3 适配时要保持 cooldown、优先级、Scenario 门控语义不变。
 - L6 Dispatcher / instructions：完成基础输出；T-Safety 已在 prompt builder 前接入，prompt / `push_message.parts[].text` 不允许包含 unsafe raw。
 - L7 safety guard + Hosted UI：完成。
@@ -115,5 +115,5 @@
 - 不要把自由文本过滤塞进 Detector / Scenario / Arbiter。
 - 不要复活旧的 `vehicle_valid` 作为 `you_died` 主路径。
 - 不要把 recovery 作为 v1 当前任务；它只保留测试方案和 TODO。
-- 不要沿用旧的 pre-T-Safety / pre-identity 测试数量；当前逻辑自检应以 `74/74 passed` 为准。
+- 不要沿用旧的 pre-T-Safety / pre-identity 测试数量；当前逻辑自检应以 `75/75 passed` 为准。
 - 不要在父仓库 `N.E.K.O` 里提交这个独立插件仓库。

@@ -9,7 +9,7 @@
 - T4 integration tests are complete.
 - `T-Safety: output text sanitizer` is complete.
 - `T-Observe: runtime decision timeline` is implemented in lightweight form: always-on last summaries plus an opt-in in-memory debug ring buffer.
-- Logic self-check currently passes: `74/74`.
+- Logic self-check currently passes: `75/75`.
 - Real-machine `dry_run` smoke passed on 2026-06-21 for Hosted UI context/actions, safety pause/resume, stall/low-altitude decision flow, and dry-run dispatcher output.
 - Default runtime mode is `dry_run = true`; the plugin runs the decision chain but does not push real catgirl speech until dry run is disabled.
 - The plugin boundary is HTTP `:8112` (`/api/telemetry`) only. It consumes the vendored data layer and must not import or modify `data_layer/` code.
@@ -18,6 +18,7 @@
 ## Ready to Hand Off
 
 - Core contracts, scenario machine, detectors, arbiter, safety guard, dispatcher, runtime observability, tests, replay tool, and Hosted UI panel are present.
+- The offline replay tool's synthetic scenario now covers v1.6 `combat.feed[].is_my_kill` / `is_my_death` kill and death events.
 - Hosted UI surface, dashboard context, actions, and minimal panel have passed smoke validation.
 - Design docs are complete for the current v1 scope: D-B1 through D-B5, implementation plan, data-layer TODOs, recovery test plan, and real-machine validation checklist.
 - Data-layer blockers are no longer "waiting for fields"; the current work is plugin-side v1.6 DTO adaptation and real-machine seam validation.
@@ -50,7 +51,7 @@ uv run pytest -c tests\pytest.ini tests -q
 
 Notes:
 
-- `tests/run_logic_tests.py` is the no-host logic self-check and should report `74/74 passed`.
+- `tests/run_logic_tests.py` is the no-host logic self-check and should report `75/75 passed`.
 - The standalone pytest entry uses `tests/pytest.ini` so pytest does not import the host SDK-dependent plugin entrypoint while collecting tests.
 - If an older handoff note still shows the pre-T4 test count, treat it as stale unless it explicitly refers to an older test entry point.
 - The real-machine checklist is in `docs/真机验证-checklist.md`; it now includes the 2026-06-21 dry-run smoke result and links to the 2026-06-20 offline sample replay report in `docs/样本回放-20260620.md`.
