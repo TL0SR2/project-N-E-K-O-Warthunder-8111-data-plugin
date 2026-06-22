@@ -26,6 +26,7 @@ War Thunder 猫娘副驾驶插件 v1。插件只消费本地数据层 HTTP `:811
 - PROJECT_STATUS.md
 - docs/实现计划-codex.md
 - docs/真机验证-checklist.md
+- docs/样本回放-20260620.md
 - docs/待办事项.md
 - docs/D-B1-scenario-model.md ~ docs/D-B5-event-field-requirements.md
 - data_layer/data process/后端接口文档.md
@@ -35,6 +36,7 @@ War Thunder 猫娘副驾驶插件 v1。插件只消费本地数据层 HTTP `:811
 - T4 集成测试完成。
 - 逻辑自检 71/71 passed。
 - 数据层 v1.6 已合并，插件侧已分项接入 kill/death、identity、replay 静默和 overheat HUD notice，仍需真机接缝验证。
+- 合作者 2026-06-20 真实样本已做离线 replay 聚合报告，可先看 `docs/样本回放-20260620.md` 判断哪些缺口仍需下次真机补测。
 - 真机 dry_run smoke 已完成一轮；过热/炸缸已补 `hud_notices` code 接入，仍需真机复测。
 - T-Observe 已完成轻量实现；下一轮真机 dry_run 可用 `observe.last_decision` / `observe.last_output_status` 辅助判断为什么没播或晚播。
 - T-Safety 已完成；kill/death/hudmsg/combat.feed/awards 正式播报前还需要真机 dry_run 验证。

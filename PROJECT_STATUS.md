@@ -53,7 +53,7 @@ Notes:
 - `tests/run_logic_tests.py` is the no-host logic self-check and should report `71/71 passed`.
 - The standalone pytest entry uses `tests/pytest.ini` so pytest does not import the host SDK-dependent plugin entrypoint while collecting tests.
 - If an older handoff note still shows the pre-T4 test count, treat it as stale unless it explicitly refers to an older test entry point.
-- The real-machine checklist is in `docs/真机验证-checklist.md`; it now includes the 2026-06-21 dry-run smoke result.
+- The real-machine checklist is in `docs/真机验证-checklist.md`; it now includes the 2026-06-21 dry-run smoke result and links to the 2026-06-20 offline sample replay report in `docs/样本回放-20260620.md`.
 
 ## Next Recommended Work
 
