@@ -11,6 +11,7 @@
 - T4 集成测试已完成。
 - Hosted UI surface/context/action smoke 已通过。
 - T-Safety output text sanitizer 已完成。
+- T-Observe runtime decision timeline 已完成轻量实现：普通模式只保留最近摘要，debug 模式使用内存 ring buffer。
 - 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `68/68 passed` 为准。
 - 数据层 `v1.6` 已合并，包含：
   - `overspeed_warn` / `overspeed_critical`
@@ -42,6 +43,7 @@
 - L5 Arbiter：完成；后续 M3 适配时要保持 cooldown、优先级、Scenario 门控语义不变。
 - L6 Dispatcher / instructions：完成基础输出；T-Safety 已在 prompt builder 前接入，prompt / `push_message.parts[].text` 不允许包含 unsafe raw。
 - L7 safety guard + Hosted UI：完成。
+- T-Observe runtime decision timeline：完成轻量实现；Hosted UI context 暴露 `observe.last_event` / `last_decision` / `last_output_status`，debug timeline 默认关闭。
 - L8 数据层并入：vendored 数据层已合并；插件侧子进程编排未做。
 - L9 真机调参：未完成。
 
@@ -96,12 +98,13 @@
 - `/api/telemetry.combat.feed[]` 是否含稳定递增 id、`is_my_kill`、`is_my_death`。
 - `/api/identity` 是否能由 Hosted UI 面板设置/清除权威 player_name，并反映到 `combat.self` 与 kill/death 归属标记。
 - `hud_notices` 中的技术 code 是否能触发安全事件；raw notice 文本、`awards` 是否只进入 debug/audit 或被 T-Safety 阻断，不直接进入 prompt。
+- T-Observe 的 `observe.last_decision` / `observe.last_output_status` 是否能解释未播、晚播、dry_run 输出或 dispatcher 失败。
 
 ## 推进顺序
 
-1. 文档状态同步。
-2. M3 剩余验证：identity 真机验证、replay 样本验证、awards/free-text dry_run 验证、failure 字段策略。
-3. 真机 checklist 验证 v1.6 接缝。
+1. M3 剩余验证：identity 真机验证、replay 样本验证、awards/free-text dry_run 验证、failure 字段策略。
+2. 真机 checklist 验证 v1.6 接缝，同时用 T-Observe 辅助解释决策链路。
+3. 如 T-Observe 在真机里信息不足，再补 debug timeline 展示/字段。
 4. kill/death/hudmsg/combat.feed/awards 去桩前复核 T-Safety prompt 合同。
 5. T3/L8 子进程编排。
 6. L9 真机调参和 dry_run=false 终验。

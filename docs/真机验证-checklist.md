@@ -1,6 +1,6 @@
 # 真机验证 checklist
 
-> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、identity Hosted UI/action 接缝已完成；逻辑自检以 `68/68 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
+> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、T-Observe runtime decision timeline、identity Hosted UI/action 接缝已完成；逻辑自检以 `68/68 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
 
 ## 已完成的 Hosted UI Smoke
 
@@ -14,6 +14,7 @@
 
 - 三个 health 均正常：主后端 `48911`、Hosted UI `48916`、数据层 `8112`。
 - Hosted UI `dashboard` context 可持续返回 `dry_run`、连接状态、scenario、safety、observe last decision/output。
+- T-Observe 普通模式已可通过 `observe.last_event` / `observe.last_decision` / `observe.last_output_status` 辅助判断链路停在哪一步；debug timeline 默认关闭。
 - `pause` 已验证：`safety.status=paused`、`manual_paused=true`，风险事件被 Arbiter 以 `reason=paused` suppress。
 - `resume` 已验证：`safety.status=running`、`manual_paused=false`，恢复后 `low_alt_danger` 可被 Arbiter allowed 并进入 dry_run dispatcher。
 - `test_say` 已验证：宿主日志出现多条 `TRIGGER entry='test_say'`，未出现 `PLUGIN_UI_ACTION_FAILED`。

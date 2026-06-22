@@ -1,8 +1,4 @@
-"""Runtime observability contract tests.
-
-These are RED tests for T-Observe. They describe the desired lightweight
-observability API without implementing it yet.
-"""
+"""Runtime observability contract tests for T-Observe."""
 
 from __future__ import annotations
 
