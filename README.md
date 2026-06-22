@@ -27,6 +27,7 @@ War Thunder 猫娘副驾驶插件 v1。插件只消费本地数据层 HTTP `:811
 - docs/实现计划-codex.md
 - docs/真机验证-checklist.md
 - docs/统一测试前-离线检查.md
+- docs/真机测试结果-template.md
 - docs/样本回放-20260620.md
 - docs/待办事项.md
 - docs/D-B1-scenario-model.md ~ docs/D-B5-event-field-requirements.md

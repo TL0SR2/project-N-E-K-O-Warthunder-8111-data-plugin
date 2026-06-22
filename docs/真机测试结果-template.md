@@ -1,0 +1,121 @@
+# 真机测试结果记录模板
+
+> 用途：每轮真机 / 数据层统一测试后，把结果整理成可回填到 `PROJECT_STATUS.md`、`README.md`、`docs/真机验证-checklist.md` 的短报告。不要提交原始玩家名、HUD 文本、combat feed 原文或 awards 原文。
+
+## 基本信息
+
+- 日期：
+- 测试人：
+- 插件 commit：
+- 数据层来源 / commit：
+- 游戏模式 / 机型：
+- `dry_run`：true / false
+- 是否使用 Hosted UI 设置玩家名：是 / 否
+- 样本留存位置：`local_samples/...` 或本地临时目录
+
+## 启动与健康检查
+
+- N.E.K.O 主后端 `48911/health`：
+- Hosted UI `48916/health`：
+- 数据层 `8112/health`：
+- Hosted UI surface `main` 是否可打开：
+- `dashboard` context 是否返回：
+- `PLUGIN_UI_ACTION_FAILED`：有 / 无
+- Traceback / ERROR：有 / 无
+
+## 面板与 action
+
+- `set_identity`：
+  - 输入昵称：
+  - `/api/identity` 结果：
+  - `/api/telemetry.combat.self.source`：
+  - `combat.player_name`：
+- `set_dry_run`：
+- `pause`：
+- `resume`：
+- `test_say`：
+
+## v1.6 DTO 覆盖
+
+- `replay` 字段：有 / 无
+- `processed.flags.overspeed_warn`：有 / 无
+- `processed.flags.overspeed_critical`：有 / 无
+- `combat.feed[].id` 单调：是 / 否 / 未观察
+- `combat.feed[].is_my_kill`：有 / 无
+- `combat.feed[].is_my_death`：有 / 无
+- `combat.feed[].involves_me`：有 / 无
+- `combat.self.source=manual`：有 / 无
+- `hud_notices.feed[].code=engine_overheat`：有 / 无
+- `hud_notices.feed[].code=oil_overheat`：有 / 无
+- `powertrain_failure` 或等价故障 code：有 / 无
+- `awards`：有 / 无
+
+## dry_run 事件观察
+
+| 场景 | 是否触发 | 期望事件 | Arbiter 结果 | Dispatcher 结果 | 备注 |
+|---|---|---|---|---|---|
+| 失速 / 低速 |  | `stall_risk` |  |  |  |
+| 低空危险 |  | `low_alt_danger` |  |  |  |
+| 过热 / 油温 |  | `overheat` |  |  |  |
+| 低油 |  | `low_fuel` |  |  |  |
+| 超速 warning |  | `overspeed` warning |  |  |  |
+| 超速 critical |  | `overspeed` critical |  |  |  |
+| 我的击杀 |  | `you_killed` |  |  |  |
+| 我的死亡 |  | `you_died` |  |  |  |
+| 战斗结束 |  | `battle_end` |  |  |  |
+| replay=true |  | 静默 / suppressed |  |  |  |
+
+## T-Observe 结论
+
+- `observe.last_event` 是否能说明最近事件：
+- `observe.last_decision` 是否能解释 allow / drop / cooldown / scenario gate：
+- `observe.last_output_status` 是否能解释 dry_run / pushed / failed：
+- 是否需要打开 debug timeline：
+- 信息是否足够解释“为什么没播 / 为什么晚播”：
+
+## T-Safety 结论
+
+- prompt / dry_run 输出是否出现 raw 玩家名：是 / 否
+- prompt / dry_run 输出是否出现 raw HUD 文本：是 / 否
+- prompt / dry_run 输出是否出现 raw combat.feed 文本：是 / 否
+- prompt / dry_run 输出是否出现 raw awards 原文：是 / 否
+- 被替换成 generic 文案的例子：
+- 需要新增 sanitizer 规则吗：
+
+## dry_run=false 真实开口
+
+> 只有 dry_run 数值安全事件通过后才填写。kill/death/hudmsg/combat.feed/awards 不先开放真实自由文本播报。
+
+- 是否关闭 dry_run：
+- 测试事件：
+- 是否正常开口：
+- 是否滞后：
+- 是否刷屏：
+- 是否有 TTS / push_message 报错：
+
+## coverage_gaps
+
+把 `tools/sample_replay.py` 或现场观察得到的缺口列在这里：
+
+```text
+coverage_gaps:
+```
+
+常见缺口：
+
+- `no_replay_true_frames`
+- `no_overspeed_critical_flags`
+- `combat_feed_missing_ownership_fields`
+- `combat_feed_no_ownership_true_frames`
+- `no_manual_identity_frames`
+- `no_oil_overheat_notice_codes`
+- `no_powertrain_failure_notice_codes`
+- `hud_notice_severity_unknown`
+
+## 结论
+
+- 本轮已关闭的验证项：
+- 仍需下轮真机补测的项：
+- 是否允许进入 `dry_run=false` 数值安全事件测试：
+- 是否允许 kill/death/hudmsg/combat.feed/awards 去桩：
+- 需要补代码 / 文档 / 测试：

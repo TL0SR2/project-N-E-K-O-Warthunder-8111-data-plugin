@@ -41,6 +41,8 @@
 9. **样本留存**：把现场抓包放到 `local_samples/` 或本地临时目录，保持 `.gitignore`；仓库只提交聚合统计和脱敏结论。
 10. **真实开口**：只有前面 dry_run 通过后，才关闭 dry_run；先测 stall / low_alt / overheat / low_fuel / overspeed 等数值安全事件，不先开放 kill/death/hudmsg/combat.feed/awards 真实播报。
 
+每轮测完后，用 `docs/真机测试结果-template.md` 记录结果；只写聚合统计、安全摘要和结论，不写 raw 玩家名、raw HUD 文本、raw combat.feed 或 awards 原文。
+
 现场优先级：
 
 - 第一优先：identity + kill/death ownership true、overheat/oil_overheat、overspeed_critical、replay=true。
