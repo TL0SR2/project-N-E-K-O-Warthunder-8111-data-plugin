@@ -15,12 +15,12 @@
 
 ## 0. 字段语义约定（先钉死，免得各事件理解不一）
 
-- **BattleEvent 是统一语义事件模型**：连续派生 / hudmsg 离散 / 生命周期 三类来源，**产出后形状一致**，下游只认它。`TelemetrySnapshot` 不进字典（它是输入，不是事件）。
+- **BattleEvent 是统一语义事件模型**：连续派生 / 带 id 的离散事实（combat.feed / hud_notices）/ 生命周期 三类来源，**产出后形状一致**，下游只认它。`TelemetrySnapshot` 不进字典（它是输入，不是事件）。
 - **severity（0–10）**：危险/紧迫程度，决定**能否抢占**与是否驱动 `CRITICAL_RISK`。分档：9–10 生死危急；6–8 重要；3–5 一般；0–2 信息/陪伴。
 - **priority（0–10）**：同一仲裁窗口内多个候选竞争时谁先开口（高者胜）。与 severity 相关但不等同：生命周期事件可能 severity 低、priority 高（"必须说"）。
 - **是否允许抢占**：true = 可绕过全局限流/冷却**立即开口**（仅留给生死危急与阵亡）；false = 严格受限流约束。
 - **cooldown**：同一事件两次开口的最短间隔。
-- **re-arm 条件**：退出后"算作新一次事件"需满足的条件——连续派生类需退出阈值保持一段时间（配合迟滞）；离散类按新的 hudmsg id / 新一次生命周期跳变。
+- **re-arm 条件**：退出后"算作新一次事件"需满足的条件——连续派生类需退出阈值保持一段时间（配合迟滞）；离散类按新的 feed/notice id / 新一次生命周期跳变。
 - **payload**：该事件**携带的派生上下文（具体标量子集）**，供 handler 拼"事实行"。**不是整个 snapshot**，只是这次事件相关的几个派生值。
 - **提示意图**：只描述"要让猫娘传达什么"，**不写具体台词**（台词归角色 LLM）。
 - ⚠️ 下面所有 severity / priority / cooldown 数值均为**草稿初值，待抓包后校准**。
@@ -34,8 +34,8 @@
 | `overspeed` | 连续派生 | 危急 | 7 | 8 | 是 | 15s | IN_FLIGHT / COMBAT_STRESS →CRITICAL |
 | `overheat` | 连续派生 / HUD notice | 重要提醒 | 6 | 6 | 否 | 30s | IN_FLIGHT / COMBAT_STRESS |
 | `low_fuel` | 连续派生 | 一般提醒 | 3 | 4 | 否 | 每局 1–2 次 | IN_FLIGHT |
-| `you_killed` | hudmsg 离散 | 战斗 | 3 | 5 | 否 | 8s（多杀合并） | IN_FLIGHT / COMBAT_STRESS |
-| `you_died` | hudmsg+valid | 生命周期 | 8 | 10 | 是 | 每次死亡 1 次 | DEAD（死亡瞬间） |
+| `you_killed` | combat.feed 离散 | 战斗 | 3 | 5 | 否 | 8s（多杀合并） | IN_FLIGHT / COMBAT_STRESS |
+| `you_died` | combat.feed 离散 | 生命周期 | 8 | 10 | 是 | 每次死亡 1 次 | DEAD（死亡瞬间） |
 | `spawn` | 生命周期 | 生命周期 | 1 | 5 | 否 | 每次出生 1 次 | SPAWNING |
 | `battle_end` | 生命周期 | 生命周期 | 1 | 6 | 否 | 每局 1 次 | BATTLE_ENDED |
 
@@ -116,32 +116,32 @@
 - 误判风险：低；"多少算低"是产品口味。
 - 提示意图：提醒油量偏低，注意返航/规划。
 
-### B 组 · hudmsg 离散
+### B 组 · combat.feed 离散
 
 #### `you_killed` 击杀
 - 中文说明：玩家击落/摧毁了敌方单位。
-- 来源信号：`/hudmsg` `damage[].msg`（"shot down"/"destroyed"）+ 自我身份匹配。
-- 触发条件摘要：新的 damage 条目，文本判定击杀方为"我"。
+- 来源信号：`/api/telemetry.combat.feed[]` 中新的 `id`，且 `is_my_kill == true`。
+- 触发条件摘要：数据层已完成身份归属判定；插件只按新 id 去重并消费 ownership flag。
 - 允许 Scenario：IN_FLIGHT、COMBAT_STRESS。
 - 被抑制 Scenario：CRITICAL_RISK、SPAWNING、OUT_OF_BATTLE、DEAD、BATTLE_ENDED。
 - severity 3 / priority 5 / 抢占 否 / cooldown 8s（**多杀合并**：短窗内多条合成一次"连杀 N"）。
-- re-arm：新的 hudmsg 击杀 id。
+- re-arm：新的 combat.feed 击杀 id。
 - payload：`target_name`（可选）、`target_vehicle`（可选）、`killstreak_count`。
-- 缺字段降级：不可降级（无 hudmsg 即无事件）。
-- 误判风险：高（文本解析 + 身份匹配 + 击杀/助攻区分 + 多语言/重名）。
+- 缺字段降级：不可降级（无 `is_my_kill == true` 即无事件）。不回退到 raw hudmsg 文本匹配。
+- 误判风险：中（主要取决于数据层 ownership flag 与玩家身份 seam；插件侧不再做多语言文本解析）。
 - 提示意图：击杀庆祝/调侃，简短。
 
 #### `you_died` 死亡（与生命周期合一）
 - 中文说明：玩家被击落/坠毁/阵亡。
-- 来源信号：`/hudmsg`（关于我的 shot down/crashed）**或** `/state.valid` true→false；建议两路交叉确认。
-- 触发条件摘要：收到关于我的死亡 hudmsg，或 valid 翻 false 且对局进行中。
+- 来源信号：`/api/telemetry.combat.feed[]` 中新的 `id`，且 `is_my_death == true`。
+- 触发条件摘要：数据层已完成死亡归属判定；插件只按新 id 去重并消费 ownership flag。`vehicle_valid` 翻转只用于 Scenario 存活态，不作为 `you_died` 主路径。
 - 允许 Scenario：DEAD（死亡瞬间触发并进入 DEAD）。
 - 被抑制 Scenario：OUT_OF_BATTLE、SPAWNING、BATTLE_ENDED。
 - severity 8 / priority 10 / **抢占 是**（重要时刻不应被限流吞掉）/ cooldown：每次死亡 1 次。
 - re-arm：新一次死亡（重生后再死）。
 - payload：`cause`（shot_down/crashed/unknown）、`by_name`（可选）、`own_vehicle`。
-- 缺字段降级：hudmsg 不可靠 → 用 valid 翻转兜底（语义变粗，无法给出死因）。
-- 误判风险：中-高（valid 翻转多义：死亡 vs 离场/观战；身份匹配）。须靠 hudmsg + mission 交叉确认。
+- 缺字段降级：不可降级（无 `is_my_death == true` 即无死亡事件）。不回退到 `valid` 翻转播报死亡。
+- 误判风险：中（主要取决于数据层 ownership flag；插件侧避免 valid 翻转造成的离场/观战误报）。
 - 提示意图：阵亡安慰/共情，简短。
 
 ### C 组 · 生命周期
@@ -177,7 +177,7 @@
 ## 3. 跨事件去重 / 重叠规则
 
 - ~~steep_dive 去重~~：steep_dive 已于 v0.2 删除，此规则作废。
-- **you_died 双路合一**：hudmsg 死亡 与 valid 翻转 指向同一次死亡，**去重为一个事件**（取先到，另一路在 cooldown 内丢弃）。
+- **you_died 去重**：以 `combat.feed` 新 id 为准；同一 id 只产一次死亡事件。`valid` 翻转只影响 Scenario，不参与死亡事件合并。
 - **多杀合并**：you_killed 在 cooldown 窗内的多条合成一次"连杀 N"，避免连珠炮。
 - **危急互斥靠 priority**：同窗多个危急（如 stall + low_alt）只播 priority 最高者，其余压入冷却（由 D-B4 仲裁）。
 
@@ -185,6 +185,6 @@
 
 - 触发条件的**具体阈值/迟滞/confirm 窗口**在 D-B3（ConditionDetector）定义，本字典只给摘要。
 - 第 1 节矩阵的"允许/抑制 Scenario"与 D-B1 第 4 节门控矩阵一致（overheat 回填 ✅ 已完成）。
-- payload 字段须能从**数据层 `/api/telemetry`** 字段派生（见 D-B5 v0.2 映射）；落不到的（如 you_killed 的 `victim`、you_died 的 `by_name`）标"可选"，缺则降级。
+- payload 字段须能从**数据层 `/api/telemetry`** 字段派生（见 D-B5 v0.2 映射）；落不到的（如 you_killed 的 `victim_vehicle`、you_died 的 `killer_vehicle`）标"可选"，缺则降级。
 - 全部 severity / priority / cooldown / 阈值为草稿初值，**待 D-A1 抓包后在汇合期（G3）用真实样本校准**。
-- 未决：① you_killed/you_died 身份匹配方案（依赖 D-A4）；② 多杀合并与 est_minutes 估算是否 v1 做。
+- 未决：① `/api/identity` 设置后，真机验证 `combat.self` 与 `is_my_kill` / `is_my_death` 是否按手动昵称生效；② 多杀合并与 est_minutes 估算是否 v1 做。

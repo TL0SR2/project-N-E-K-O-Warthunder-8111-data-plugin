@@ -15,7 +15,7 @@
 - **Scenario 只做提示门控，不做战局理解。** 它的唯一职责是"在什么处境下，哪些事件该说/该压、用什么节奏"，不解释战局、不预测、不分类敌情。
 - **确定性**：每个 Scenario 的进入/退出都由明确的字段阈值或离散信号决定，无概率、无 ML。
 - **单态**：任一时刻有且仅有一个 Scenario（phase machine），用固定优先级解析。
-- **数据来源**：仅 `/state`、`/indicators`、`/hudmsg`、`/mission.json`（与 D-B5 一致）。不碰 map。
+- **数据来源**：仅数据层 `/api/telemetry` 中的 `state`、`indicators`、`processed.flags`、`combat.feed`、`hud_notices`、`mission_status` 等字段（与 D-B5 一致）。不碰 map。
 - **Scenario ≠ Detector**：危险的"检测"在 D-B3 的 ConditionDetector 里；Scenario 只**消费**这些 flag 来切换处境。
 
 ## 1. Scenario 列表
@@ -45,9 +45,9 @@ stateDiagram-v2
     IN_FLIGHT --> CRITICAL_RISK: 任一危急 flag
     COMBAT_STRESS --> CRITICAL_RISK: 任一危急 flag
     CRITICAL_RISK --> IN_FLIGHT: 危急解除(迟滞)
-    IN_FLIGHT --> DEAD: valid 翻 false / you_died
-    COMBAT_STRESS --> DEAD: valid 翻 false / you_died
-    CRITICAL_RISK --> DEAD: valid 翻 false / you_died
+    IN_FLIGHT --> DEAD: you_died / valid 翻 false
+    COMBAT_STRESS --> DEAD: you_died / valid 翻 false
+    CRITICAL_RISK --> DEAD: you_died / valid 翻 false
     DEAD --> SPAWNING: 重生(valid 翻 true)
     DEAD --> BATTLE_ENDED: 对局结束
     IN_FLIGHT --> BATTLE_ENDED: 对局结束
@@ -105,9 +105,9 @@ stateDiagram-v2
 
 ### DEAD
 - 定义：本机已阵亡，但对局仍在进行（可能可重生或转观战）。
-- 进入：`/state.valid` true→false（对局进行中），或收到关于我的 `you_died`/坠毁 hudmsg；建议两路交叉确认。
+- 进入：收到 `combat.feed[].is_my_death == true` 的 `you_died`，或对局中本机 `vehicle_valid` 变为 false。后者只作为 Scenario 存活态判断，不再作为 `you_died` 事件主来源。
 - 退出：重生（`valid` 翻 true）→ `SPAWNING`；对局结束 → `BATTLE_ENDED`。
-- 依赖字段：`/state.valid`、`/hudmsg`（you_died）、`/mission.json`（确认仍在对局）。
+- 依赖字段：`combat.feed[].is_my_death`、`state/vehicle.valid`、`mission_status`（确认仍在对局）。
 - 对提示系统：放行**死亡安慰事件**；压制飞行安全（无意义）与战斗；安慰后可放行轻量闲聊。
 
 ### BATTLE_ENDED
@@ -151,5 +151,5 @@ stateDiagram-v2
 
 - **CRITICAL_RISK / COMBAT_STRESS 依赖 D-B3 的 detector flag**：Scenario 不自己算危险，只读 flag。
 - **第 4 节矩阵直接喂 D-B4 仲裁**：仲裁 = Scenario 门控 + 限流/冷却/抢占。
-- **字段回填 D-A5**：本文用到的 `/state.valid`、`Ny`、`/mission.json` status、`/hudmsg` 受创/结束等，须在 D-A5 确认稳定性；尤其 `/mission.json` 的"结束/进行中"取值、`/state.valid` 翻转的多义性（死亡 vs 离场）需抓包实证。
+- **字段回填 D-A5**：本文用到的 `state/vehicle.valid`、`Ny`、`mission_status`、`combat.feed[].is_my_death`、`hud_notices`、`hud_events` 受创/结束等，须在 D-A5 确认稳定性；尤其 `mission_status` 的"结束/进行中"取值、`vehicle_valid` 翻转的多义性（死亡 vs 离场）需抓包实证。
 - **未决项**：① grace 窗口秒数（待抓包定）；② COMBAT_STRESS 去留（第 5 节）；③ DEAD↔BATTLE_ENDED 的判据完全依赖 `/mission.json`，若该端点不稳需降级策略。
