@@ -26,6 +26,27 @@
 
 - 过热/炸缸：真机 UI 出现油温橙/红、发动机黄、炸缸现象；插件侧已补 `hud_notices.feed[].code=engine_overheat/oil_overheat` 到 `overheat` 的映射。后续需要真机复测该接缝；`powertrain_failure` 暂不直接播报。
 
+## 下一轮统一测试现场顺序
+
+> 目标：先在 `dry_run=true` 下验证 v1.6 DTO 接缝和 T-Observe 解释能力；只有数值安全事件 dry_run 稳定后，才考虑 `dry_run=false`。
+
+1. **离线门禁**：按 `docs/统一测试前-离线检查.md` 跑完逻辑测试、pytest、plugin check、合成 replay、本地样本 replay。
+2. **启动链路**：启动 N.E.K.O 宿主、Hosted UI、数据层 `:8112`，确认三项 health 正常。
+3. **打开面板**：确认 `dry_run=true`，观察 `connected` / `conn_state` / `in_battle` / `scenario` / `safety` / `observe.last_decision` / `observe.last_output_status`。
+4. **基础 action**：依次点 `pause`、`resume`、`test_say`，确认没有 `PLUGIN_UI_ACTION_FAILED`；`pause` 时风险事件应被 suppress，`resume` 后恢复。
+5. **identity**：在 Hosted UI 设置游戏昵称，确认 `/api/identity` 与 `/api/telemetry.combat.self.source=manual`；随后用击杀/死亡样本验证 `is_my_kill` / `is_my_death`。
+6. **数值安全事件**：优先复测 `overheat` / `oil_overheat`、`overspeed_critical`、`stall_risk`、`low_alt_danger`、`low_fuel`；每次看 `observe.last_decision` 是否能解释 allow / drop / cooldown / scenario gate。
+7. **自由文本风险路径**：只在 `dry_run=true` 下观察 `combat.feed` / `hud_notices` / `awards`，确认 prompt / dry_run 输出不包含 raw 玩家名、raw HUD 文本或 awards 原文。
+8. **replay 降级**：若数据层返回 `replay=true`，确认 Detector 静默、last decision 能说明 suppressed / replay，不触发真实输出。
+9. **样本留存**：把现场抓包放到 `local_samples/` 或本地临时目录，保持 `.gitignore`；仓库只提交聚合统计和脱敏结论。
+10. **真实开口**：只有前面 dry_run 通过后，才关闭 dry_run；先测 stall / low_alt / overheat / low_fuel / overspeed 等数值安全事件，不先开放 kill/death/hudmsg/combat.feed/awards 真实播报。
+
+现场优先级：
+
+- 第一优先：identity + kill/death ownership true、overheat/oil_overheat、overspeed_critical、replay=true。
+- 第二优先：awards/free-text dry_run 安全合同、powertrain_failure 是否继续不播。
+- 第三优先：`dry_run=false` 数值安全事件真实开口延迟和刷屏情况。
+
 ## 剩余接缝
 
 - NEKO 宿主加载与插件生命周期。
