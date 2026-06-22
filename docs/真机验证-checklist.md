@@ -22,9 +22,27 @@
 - 数值安全链路已观察到：`stall_risk`、`low_alt_danger`，并保留此前 `overspeed`、`low_fuel`、`you_died` dry_run 观察结论。
 - 未发现 Traceback / ERROR / TTS push 报错。
 
+## 已完成的真机 dry_run Smoke（2026-06-23）
+
+- 三个 health 均正常：主后端 `48911`、Hosted UI `48916`、数据层 `8112`；测试结束后端口已关闭。
+- Hosted UI context 持续返回 `dry_run=true`、`conn_state=in_battle`、scenario、safety、`observe.last_event`、`observe.last_decision`、`observe.last_output_status`。
+- `spawn` 已进入 Arbiter allowed，并由 Dispatcher 走 dry_run。
+- `overspeed_warn` / `overspeed_critical` 已由数据层 `processed.flags` 触发；插件生成 `overspeed/enter`，Arbiter allowed，Dispatcher dry_run 输出。
+- `low_alt_danger` 已观察到 warning/critical 场景下的 dry_run；重复 critical 命中时可被 cooldown 丢弃。
+- `stall_risk` 已观察到 `critical` 事件；Arbiter 以 `reason=preempt` 放行，Dispatcher dry_run 输出。
+- `overheat` 已观察到 warning dry_run 输出；后续 critical 命中在 cooldown 内被丢弃，说明基础链路和 cooldown 都可解释。
+- `you_died` 已观察到 `critical` 事件并 dry_run 输出；后续仍需 identity/ownership 真机验证，不把 `vehicle_valid` 跳变作为主路径。
+- `low_fuel` 未关闭验证项：现场确认 `fuel_fraction=0.0` / `fuel_kg=0.0` / `fuel_remaining_sec=0.0`，但未观测到独立 `low_fuel` 事件，且该瞬间被坠毁/死亡状态覆盖；需要单独慢速低油验证。
+- T-Observe 普通模式已能解释 allow / preempt / cooldown / dry_run 输出；debug timeline 仍默认关闭。
+- 未发现 `PLUGIN_UI_ACTION_FAILED`、后端 Traceback、TTS/push 报错。
+- 已知数据层问题：`/api/telemetry.telemetry` 字段为空，但 `processed.*` 可用；map/profile 轮询持续出现 `_merge_profile() missing ... army and family_rules`，需数据层侧后续修复或确认影响范围。
+
 待复核：
 
-- 过热/炸缸：真机 UI 出现油温橙/红、发动机黄、炸缸现象；插件侧已补 `hud_notices.feed[].code=engine_overheat/oil_overheat` 到 `overheat` 的映射。后续需要真机复测该接缝；`powertrain_failure` 暂不直接播报。
+- identity + kill ownership：面板设置玩家名后，继续验证 `/api/identity`、`combat.self.source=manual`、`is_my_kill` / `is_my_death`。
+- replay 降级：仍需真实 `replay=true` 样本验证 Detector 静默。
+- `low_fuel`：需要不混入坠毁/低空/死亡的慢速单项验证。
+- 油温/发动机细项：过热基础链路已过；油温 / 发动机温度数据库和 `powertrain_failure` 策略仍后置，`powertrain_failure` 暂不直接播报。
 
 ## 下一轮统一测试现场顺序
 
@@ -45,15 +63,15 @@
 
 现场优先级：
 
-- 第一优先：identity + kill/death ownership true、overheat/oil_overheat、overspeed_critical、replay=true。
-- 第二优先：awards/free-text dry_run 安全合同、powertrain_failure 是否继续不播。
+- 第一优先：identity + kill ownership true、replay=true、`low_fuel` 独立慢速验证。
+- 第二优先：awards/free-text dry_run 安全合同、油温/发动机数据库补齐后的细项复测、powertrain_failure 是否继续不播。
 - 第三优先：`dry_run=false` 数值安全事件真实开口延迟和刷屏情况。
 
 ## 剩余接缝
 
 - NEKO 宿主加载与插件生命周期。
-- 数据层 `:8112` v1.6 DTO 与插件解析。
-- `dry_run` 决策链路是否能解释每一步（基础安全链路已通过一轮，剩余见下方待复核）。
+- 数据层 `:8112` v1.6 DTO 与插件解析（基础数值安全链路已通过，剩余 identity/replay/free-text/low_fuel 单项）。
+- `dry_run` 决策链路是否能解释每一步（2026-06-23 已证明 always-on observe 摘要足够解释主要安全事件）。
 - `push_message` 真实开口链路。
 - T-Safety 已完成；kill/death/hudmsg/combat.feed/awards 在真机 dry_run 验证前仍不做真实自由文本播报。
 
@@ -162,8 +180,8 @@
 
 注意：
 
-- overspeed 不再是数据层缺口，但插件侧仍需要验证 flag 是否能触发正确事件。
-- 2026-06-21 已验证低空 / 失速 / pause / resume / test_say 基础链路；过热/炸缸已补插件侧 `hud_notices` code 映射，仍需真机 dry_run 复测。
+- overspeed 不再是数据层缺口；2026-06-23 已验证 warning/critical flag 能触发正确事件并进入 dry_run。
+- 2026-06-21 已验证 pause / resume / test_say 基础链路；2026-06-23 已验证低空 / 失速 / 超速 / 过热 / 死亡 dry_run 基础链路。
 - kill/death/hudmsg/combat.feed/awards 在真机 dry_run 验证前只做 dry_run / audit，不做正式播报。
 
 ## 接缝 5：dry_run=false 真实开口
