@@ -21,7 +21,7 @@
   - `replay: true` 回放降级
   - `hud_notices`
   - `awards`
-- 真机/数据层/真实开口接缝仍未完整验证；2026-06-23 已完成一轮数值安全 dry_run，覆盖超速 warning/critical、低空、失速、过热基础链路和死亡链路，并验证手动 identity 与 owned combat.feed 归属字段。
+- 真机/数据层/真实开口接缝仍未完整验证；2026-06-23 已完成数值安全与 owned kill/death smoke，覆盖超速 warning/critical、低空、失速、过热基础链路、手动 identity、air/ground owned combat.feed 归属、`you_killed` / `you_died` dry_run，以及 `dry_run=false` 真实 push 输出。
 - recovery 仍暂缓，不打开 `wants_recovery`。
 
 ## 当前边界
@@ -82,32 +82,32 @@
 - `overspeed`：读取 `processed.flags` 中的 `overspeed_warn` / `overspeed_critical`；2026-06-23 已真机 dry_run 验证 warning/critical 事件链路。
 - `you_killed`：已监听 `combat.feed[]` 中 `is_my_kill == true` 的新 id，按 id 去重；多杀合并仍可留后续调优。
 - `you_died`：已监听 `combat.feed[]` 中 `is_my_death == true` 的新 id，不再把 `vehicle_valid` 跳变当作唯一可靠死亡信号。
-- `player_name`：通过 `/api/identity` 或启动参数建立权威身份；插件侧 Hosted UI/context/action seam 已完成，2026-06-23 真机已验证 `combat.self.source=manual` 与 `is_my_kill` / `is_my_death` owned 路径。`you_killed` 候选曾被 `SPAWNING` 门控压住，已修复，仍需 post-fix dry_run 复测。
+- `player_name`：通过 `/api/identity` 或启动参数建立权威身份；插件侧 Hosted UI/context/action seam 已完成，2026-06-23 真机已验证 `combat.self.source=manual` 与 `is_my_kill` / `is_my_death` owned 路径。`you_killed` 候选曾被 `SPAWNING` 门控压住，已修复；post-fix dry_run 与 `dry_run=false` push 已通过陆战验证。
 - `replay: true`：已在 DetectorEngine 静默并 reset，避免回放触发真实播报；仍需真实 replay 样本验证。
 - `overheat`：已接入 `hud_notices.feed[].code` 中的 `engine_overheat` / `oil_overheat`，以 code-only safe payload 生成现有 `overheat`；`powertrain_failure` 暂不直接播报。
 - `hud_notices` / `awards`：属于自由文本风险路径，真实播报前必须先过 T-Safety。
 
 ## 真机验证
 
-真机 checklist 从“等字段”改为“验证 v1.6 DTO 接缝”。见 `docs/真机验证-checklist.md`。2026-06-23 已完成一轮数值安全 dry_run；每轮测完后，用 `docs/真机测试结果-template.md` 记录聚合统计、安全摘要和结论；不要提交 raw 玩家名、raw HUD 文本、raw combat.feed 或 awards 原文。
+真机 checklist 从“等字段”改为“验证 v1.6 DTO 接缝”。见 `docs/真机验证-checklist.md`。2026-06-23 已完成数值安全 dry_run、owned kill/death dry_run、以及 kill/death `dry_run=false` push smoke；每轮测完后，用 `docs/真机测试结果-template.md` 记录聚合统计、安全摘要和结论；不要提交 raw 玩家名、raw HUD 文本、raw combat.feed 或 awards 原文。
 
 需要重点确认：
 
 - `/api/telemetry` 是否返回 `replay`。
 - `/api/telemetry.processed.flags` 是否出现 `overspeed_warn` / `overspeed_critical`（2026-06-23 已通过真机 dry_run）。
 - `/api/telemetry.combat.feed[]` 是否含稳定递增 id、`is_my_kill`、`is_my_death`。
-- `/api/identity` 是否能由 Hosted UI 面板设置/清除权威 player_name，并反映到 `combat.self` 与 kill/death 归属标记（2026-06-23 已有真机正向证据；后续重点是复测 `you_killed` 不再被 `SPAWNING` gate 压住）。
+- `/api/identity` 是否能由 Hosted UI 面板设置/清除权威 player_name，并反映到 `combat.self` 与 kill/death 归属标记（2026-06-23 已有真机正向证据；`you_killed` 不再被 `SPAWNING` gate 压住）。
 - `hud_notices` 中的技术 code 是否能触发安全事件；raw notice 文本、`awards` 是否只进入 debug/audit 或被 T-Safety 阻断，不直接进入 prompt。
 - T-Observe 的 `observe.last_decision` / `observe.last_output_status` 是否能解释未播、晚播、dry_run 输出或 dispatcher 失败。
 
 ## 推进顺序
 
-1. M3 剩余验证：post-fix `you_killed` dry-run 复测、replay 样本验证、`low_fuel` 独立慢速验证、awards/free-text dry_run 验证、failure 字段策略。
+1. M3 剩余验证：replay 样本验证、`low_fuel` 独立慢速验证、awards/free-text dry_run 验证、failure 字段策略。
 2. 真机 checklist 验证 v1.6 接缝，同时用 T-Observe 辅助解释决策链路。
 3. 如 T-Observe 在真机里信息不足，再补 debug timeline 展示/字段。
 4. kill/death/hudmsg/combat.feed/awards 去桩前复核 T-Safety prompt 合同。
 5. T3/L8 子进程编排。
-6. L9 真机调参和 dry_run=false 终验。
+6. L9 真机调参和 remaining `dry_run=false` 终验。
 
 ## 已知坑 / 不要回退
 

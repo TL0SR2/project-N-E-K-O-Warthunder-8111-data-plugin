@@ -10,7 +10,7 @@
 - `T-Safety: output text sanitizer` is complete.
 - `T-Observe: runtime decision timeline` is implemented in lightweight form: always-on last summaries plus an opt-in in-memory debug ring buffer.
 - Logic self-check currently passes: `80/80`.
-- Real-machine `dry_run` smoke passed on 2026-06-21 and 2026-06-23 for Hosted UI context/actions, safety pause/resume, spawn, overspeed warning/critical, low-altitude, stall, overheat, identity manual seam, owned kill/death ownership, you_died, Arbiter decisions, and dry-run dispatcher output.
+- Real-machine smoke passed on 2026-06-21 and 2026-06-23 for Hosted UI context/actions, safety pause/resume, spawn, overspeed warning/critical, low-altitude, stall, overheat, identity manual seam, owned kill/death ownership, you_killed / you_died Arbiter decisions, dry-run dispatcher output, and `dry_run=false` push output.
 - Default runtime mode is `dry_run = true`; the plugin runs the decision chain but does not push real catgirl speech until dry run is disabled.
 - The plugin boundary is HTTP `:8112` (`/api/telemetry`) only. It consumes the vendored data layer and must not import or modify `data_layer/` code.
 - Vendored data layer contract `v1.6` is merged. It includes `overspeed_warn` / `overspeed_critical`, enhanced `combat.feed`, `is_my_kill` / `is_my_death`, `/api/identity`, `replay: true` degrade mode, `hud_notices`, and `awards`.
@@ -25,15 +25,15 @@
 
 ## Not Done Yet
 
-- Real-machine `dry_run` seams are validated for numeric flight-safety basics; real-speech `dry_run=false` seams still need validation.
-- Plugin-side M3 adaptation to data-layer `v1.6` DTO is implemented for the current v1 scope and awaiting real-machine / sample validation.
+- Real-machine `dry_run` seams are validated for numeric flight-safety basics and owned kill/death. `dry_run=false` push output is validated for `test_say`, `you_killed`, and `you_died`; additional hudmsg / awards free-text paths still need dry-run safety validation before real output.
+- Plugin-side M3 adaptation to data-layer `v1.6` DTO is implemented for the current v1 scope. Owned kill/death, identity, overspeed, overheat, low altitude, and stall have real-machine evidence; replay samples, low_fuel isolated validation, awards/free-text paths, and oil/engine profile calibration remain open.
 - `you_killed` and `you_died` now consume `combat.feed[].is_my_kill` and `combat.feed[].is_my_death`; the old `vehicle_valid` death path is not used as the main death source.
 - `overspeed` is no longer a data-layer gap; 2026-06-23 real-machine dry-run observed `overspeed_warn` and `overspeed_critical` flowing through Detector -> Arbiter -> Dispatcher dry_run. DTO mapping should still be kept under M3 regression coverage.
 - Overheat HUD-notice seam is implemented for `hud_notices.feed[].code` values `engine_overheat` and `oil_overheat`, mapped to the existing `overheat` event with safe code-only payload. 2026-06-23 real-machine dry-run observed the `overheat` event path. Oil/engine-temperature threshold precision still waits for the data-layer database/profile calibration; `powertrain_failure` is intentionally not promoted to a speech event yet.
 - `replay: true` telemetry is silenced at `DetectorEngine`: detectors reset and no battle events are emitted. Real replay samples still need validation.
-- `/api/identity` now has a plugin-side player-name seam through Hosted UI context/action and the minimal panel. 2026-06-23 real-machine dry-run verified the manual identity seam against `combat.self.source=manual` and observed owned `combat.feed[].is_my_kill` / `combat.feed[].is_my_death` paths. `you_killed` candidate generation worked but was gated by `SPAWNING`; commit `0ae2ff4` now allows owned combat kill during spawn grace while keeping safety events suppressed, so the remaining item is post-fix live dry-run retest of `you_killed`.
+- `/api/identity` now has a plugin-side player-name seam through Hosted UI context/action and the minimal panel. 2026-06-23 real-machine testing verified the manual identity seam against `combat.self.source=manual`, observed owned `combat.feed[].is_my_kill` / `combat.feed[].is_my_death` paths in air/ground contexts, and confirmed post-fix `you_killed` plus `you_died` reach Arbiter and Dispatcher.
 - T-Observe exposes `observe.last_event`, `observe.last_decision`, `observe.last_output_status`, and debug-only `recent_timeline` through Hosted UI context. 2026-06-23 real-machine dry-run confirmed the always-on summaries explain allowed, preempted, cooldown-dropped, and dry-run dispatcher outcomes.
-- T-Safety is now in place at the NekoDispatcher / prompt-builder boundary. Formal kill/death/hudmsg/combat.feed/awards speech still needs real-machine dry-run validation before dry_run=false rollout.
+- T-Safety is now in place at the NekoDispatcher / prompt-builder boundary. Generic kill/death speech has passed real-machine `dry_run=false` smoke; hudmsg / awards / other free-text speech still needs real-machine dry-run validation before rollout.
 - Numeric flight-safety events such as stall, low altitude, overheat, and overspeed are not blocked by T-Safety. `low_fuel` has live fuel-value coverage but still needs an isolated slow-burn validation because the observed 0-fuel moment was overtaken by crash/death state.
 - Data-layer subprocess orchestration is not implemented.
 - `contract/telemetry_sample.json` now contains a sanitized v1.6-shaped telemetry sample derived from real capture structure. It intentionally excludes raw free text; live testing should place raw captures under ignored `local_samples/` and only update `contract/telemetry_sample.json` with sanitized data.
@@ -67,8 +67,8 @@ Notes:
 
 ## Next Recommended Work
 
-1. Continue M3 seams that still need real-machine validation or samples: post-fix `you_killed` dry-run retest, replay real-sample validation, `low_fuel` isolated validation, awards/free-text dry_run validation, and the remaining failure-field strategy.
-2. Run the remaining real-machine/data-layer/dry_run seams from `docs/真机验证-checklist.md`, using T-Observe to inspect `last_decision` / `last_output_status` while focusing on the post-fix owned kill path, replay, awards/free-text paths, and oil/engine failure details after the data-layer database/profile calibration.
+1. Continue M3 seams that still need real-machine validation or samples: replay real-sample validation, `low_fuel` isolated validation, awards/free-text dry_run validation, and the remaining failure-field strategy.
+2. Run the remaining real-machine/data-layer/dry_run seams from `docs/真机验证-checklist.md`, using T-Observe to inspect `last_decision` / `last_output_status` while focusing on replay, awards/free-text paths, and oil/engine failure details after the data-layer database/profile calibration.
 3. During live validation, capture a fresh real `/api/telemetry` response under ignored `local_samples/` for comparison with the sanitized `contract/telemetry_sample.json`, then summarize the result with `docs/真机测试结果-template.md`.
-4. Only after M3 + real-machine dry_run pass, consider formal kill/death/hudmsg/combat.feed/awards speech through T-Safety.
+4. Keep kill/death generic speech enabled only through T-Safety-safe prompts; consider hudmsg/combat.feed/awards speech only after their own dry-run safety checks pass.
 5. Keep T3/L8 data-layer subprocess orchestration for a later runtime pass.
