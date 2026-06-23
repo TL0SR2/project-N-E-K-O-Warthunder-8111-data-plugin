@@ -67,6 +67,9 @@ class NekoWarthunderPlugin(NekoPluginBase):
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._instructions_injected = False
+        self._status_report_min_interval_seconds = 2.0
+        self._last_status_report_at = 0.0
+        self._last_status_report_snapshot: dict[str, Any] | None = None
 
     # ------------------------------------------------------------------ 配置
     async def _reload_config(self) -> None:
@@ -188,20 +191,33 @@ class NekoWarthunderPlugin(NekoPluginBase):
                 self.logger.warning(f"dispatch failed: {type(exc).__name__}: {exc}")
                 self.safety.record_failure(now)
 
-    def _report(self) -> None:
+    def _status_report_snapshot(self, s: BattleState) -> dict[str, Any]:
+        return {
+            "connected": s.connected,
+            "conn_state": s.conn_state,
+            "in_battle": s.in_battle,
+            "scenario": s.scenario,
+            "level": s.level,
+            "dry_run": self.cfg.dry_run,
+            "safety": self.safety.status(),
+        }
+
+    def _report(self, now: float | None = None) -> None:
         with self._state_lock:
             s = self.state
+        snapshot = self._status_report_snapshot(s)
+        now = time.monotonic() if now is None else now
+        if (
+            snapshot == self._last_status_report_snapshot
+            and now - self._last_status_report_at < self._status_report_min_interval_seconds
+        ):
+            return
         try:
-            self.report_status({
-                "connected": s.connected,
-                "conn_state": s.conn_state,
-                "in_battle": s.in_battle,
-                "scenario": s.scenario,
-                "level": s.level,
-                "dry_run": self.cfg.dry_run,
-                "safety": self.safety.status(),
-            })
+            self.report_status(snapshot)
+            self._last_status_report_snapshot = snapshot
+            self._last_status_report_at = now
         except Exception:  # noqa: BLE001
+            self._last_status_report_at = now
             pass
 
     # -------------------------------------------------------------- Hosted UI
