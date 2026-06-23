@@ -139,6 +139,37 @@ def _fake_replay_fetcher(url: str):
     raise AssertionError(url)
 
 
+def _fake_idle_fetcher(url: str):
+    if url.endswith(":48911/health"):
+        return {"ok": True}
+    if url.endswith(":48916/health"):
+        return {"ok": True}
+    if url.endswith(":8112/health"):
+        return {"ok": True}
+    if "/hosted-ui/context" in url:
+        return {
+            "state": {
+                "dry_run": True,
+                "connected": True,
+                "conn_state": "idle",
+                "in_battle": False,
+                "domain": None,
+                "scenario": "OUT_OF_BATTLE",
+                "level": None,
+                "safety": {"status": "running", "manual_paused": False, "auto_paused": False, "failures": 0},
+                "observe": {"last_event": None, "last_decision": None, "last_output_status": None},
+            }
+        }
+    if url.endswith(":8112/api/telemetry"):
+        return {
+            "state": "not_in_battle",
+            "replay": False,
+            "in_battle": False,
+            "processed": {"flags": {}},
+        }
+    raise AssertionError(url)
+
+
 def test_live_monitor_once_summarizes_runtime_without_raw_text():
     from neko_warthunder.tools.live_monitor import monitor_once
 
@@ -203,6 +234,7 @@ def test_live_monitor_render_text_is_short_and_actionable():
     text = render_text_report(report)
 
     assert "Hosted UI: ok" in text
+    assert "Summary: health=ok, battle=in_battle/COMBAT_STRESS, free_text=dry_run_only, replay=clear, output=dispatcher_dry_run/dry_run, issues=action_failed+traceback+error+tts" in text
     assert "in_battle=True" in text
     assert "scenario=COMBAT_STRESS" in text
     assert "flags=altitude_low, overspeed_warn" in text
@@ -214,6 +246,15 @@ def test_live_monitor_render_text_is_short_and_actionable():
     assert "dry_run=1" in text
     assert "需要处理：存在 action failed / Traceback / ERROR / TTS 异常" in text
     assert "RawVictim" not in text
+
+
+def test_live_monitor_summary_does_not_call_idle_no_output_blocked():
+    from neko_warthunder.tools.live_monitor import monitor_once, render_text_report
+
+    report = monitor_once(fetcher=_fake_idle_fetcher, log_reader=lambda _paths: [])
+    text = render_text_report(report)
+
+    assert "Summary: health=ok, battle=not_in_battle/OUT_OF_BATTLE, free_text=clear, replay=clear, output=-, issues=none" in text
 
 
 def test_live_monitor_marks_replay_true_as_suppressed_when_observe_matches():
@@ -240,6 +281,7 @@ def test_live_monitor_render_text_reports_replay_degrade_without_raw_text():
     report = monitor_once(fetcher=_fake_replay_fetcher, log_reader=lambda _paths: [])
     text = render_text_report(report)
 
+    assert "Summary: health=ok, battle=in_battle/IN_FLIGHT, free_text=dry_run_only, replay=suppressed, output=blocked, issues=none" in text
     assert "replay=suppressed(detector_suppressed/replay)" in text
     assert "output_blocked=True" in text
     assert "RawReplayVictim" not in text

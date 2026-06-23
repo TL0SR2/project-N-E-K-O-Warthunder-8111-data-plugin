@@ -118,6 +118,7 @@ def render_text_report(report: dict[str, Any]) -> str:
     free_text_detail = _format_free_text_detail(free_text.get("source_details"))
     lines = [
         "# neko_warthunder live monitor",
+        _format_summary_line(health, context, telemetry, logs),
         f"Health: {health_line}",
         "Runtime: dry_run={dry_run}, connected={connected}, in_battle={in_battle}, scenario={scenario}, safety={safety}".format(
             dry_run=context.get("dry_run"),
@@ -391,6 +392,52 @@ def _summarize_logs(lines: list[str]) -> dict[str, int]:
         if "pushed" in lower or "push_message" in lower:
             counters["pushed"] += 1
     return counters
+
+
+def _format_summary_line(
+    health: dict[str, Any],
+    context: dict[str, Any],
+    telemetry: dict[str, Any],
+    logs: dict[str, int],
+) -> str:
+    free_text = telemetry.get("free_text_safety") if isinstance(telemetry.get("free_text_safety"), dict) else {}
+    replay = telemetry.get("replay_degrade") if isinstance(telemetry.get("replay_degrade"), dict) else {}
+    observe = context.get("observe") if isinstance(context.get("observe"), dict) else {}
+    output = observe.get("last_output_status") if isinstance(observe.get("last_output_status"), dict) else {}
+    health_state = "ok" if all(_dict(value).get("ok") for value in health.values()) else "fail"
+    battle_state = "in_battle" if context.get("in_battle") is True else "not_in_battle"
+    scenario = context.get("scenario") or "-"
+    output_blocked = replay.get("status") == "suppressed" and replay.get("output_blocked") is True
+    output_text = "blocked" if not output and output_blocked else _format_output_summary(output)
+    return (
+        "Summary: health={health}, battle={battle}/{scenario}, free_text={free_text}, "
+        "replay={replay}, output={output}, issues={issues}"
+    ).format(
+        health=health_state,
+        battle=battle_state,
+        scenario=scenario,
+        free_text=free_text.get("status") or "clear",
+        replay=replay.get("status") or "clear",
+        output=output_text,
+        issues=_format_issue_summary(logs),
+    )
+
+
+def _format_output_summary(output: dict[str, Any]) -> str:
+    if not output:
+        return "-"
+    return f"{output.get('stage') or '-'}/{output.get('outcome') or '-'}"
+
+
+def _format_issue_summary(logs: dict[str, int]) -> str:
+    names = [
+        ("action_failed", "PLUGIN_UI_ACTION_FAILED"),
+        ("traceback", "Traceback"),
+        ("error", "ERROR"),
+        ("tts", "TTS/tts"),
+    ]
+    issues = [name for name, key in names if logs.get(key, 0) > 0]
+    return "+".join(issues) if issues else "none"
 
 
 def _build_verdict(report: dict[str, Any]) -> dict[str, Any]:
