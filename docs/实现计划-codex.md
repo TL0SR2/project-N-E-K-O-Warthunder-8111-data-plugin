@@ -12,8 +12,8 @@
 - Hosted UI surface/context/action smoke 已通过。
 - T-Safety output text sanitizer 已完成。
 - T-Observe runtime decision timeline 已完成轻量实现：普通模式只保留最近摘要，debug 模式使用内存 ring buffer。
-- 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `102/102 passed` 为准。
-- 离线 readiness 工具链已补齐：`tools/sample_replay.py` 负责样本覆盖率与 `session_summary`，`tools/offline_report.py` 负责安全 Markdown / JSON 汇报，`tools/live_test_plan.py` 负责把 P1/P2 待测项展开为下一轮真机“操作 / 监控 / 通过 / 失败 / 数据层缺口”清单。
+- 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `104/104 passed` 为准。
+- 离线 readiness 与真机监控工具链已补齐：`tools/sample_replay.py` 负责样本覆盖率与 `session_summary`，`tools/offline_report.py` 负责安全 Markdown / JSON 汇报，`tools/live_test_plan.py` 负责把 P1/P2 待测项展开为下一轮真机“操作 / 监控 / 通过 / 失败 / 数据层缺口”清单，`tools/live_monitor.py` 负责真机测试时安全汇总 health、context、telemetry ownership 计数、T-Observe 摘要与日志异常计数。
 - 数据层 `v1.6` 已合并，包含：
   - `overspeed_warn` / `overspeed_critical`
   - enhanced `combat.feed`
@@ -46,7 +46,7 @@
 - L7 safety guard + Hosted UI：完成。
 - T-Observe runtime decision timeline：完成轻量实现；Hosted UI context 暴露 `observe.last_event` / `last_decision` / `last_output_status`，debug timeline 默认关闭。
 - L8 数据层并入：vendored 数据层已合并；插件侧子进程编排未做。
-- L9 真机调参：未完成。
+- L9 真机调参：未完成；T-Live 只读监控工具已完成，可用于下一轮真机统一测试归档。
 
 ## T-Safety：output text sanitizer
 
@@ -104,8 +104,8 @@
 
 ## 推进顺序
 
-1. M3 剩余验证：先运行 `tools/live_test_plan.py local_samples/data_process_20260620 tl0sr2` 生成下一轮真机操作清单，再按清单补 replay 样本验证、awards/free-text dry_run 验证、failure 字段策略。
-2. 真机 checklist 验证 v1.6 接缝，同时用 T-Observe 辅助解释决策链路。
+1. M3 剩余验证：先运行 `tools/live_test_plan.py local_samples/data_process_20260620 tl0sr2` 生成下一轮真机操作清单，现场用 `tools/live_monitor.py` 做安全只读摘要，再按清单补 replay 样本验证、awards/free-text dry_run 验证、failure 字段策略。
+2. 真机 checklist 验证 v1.6 接缝，同时用 T-Observe 与 T-Live 辅助解释决策链路。
 3. 如 T-Observe 在真机里信息不足，再补 debug timeline 展示/字段。
 4. kill/death/hudmsg/combat.feed/awards 去桩前复核 T-Safety prompt 合同。
 5. T3/L8 子进程编排。
@@ -117,5 +117,5 @@
 - 不要把自由文本过滤塞进 Detector / Scenario / Arbiter。
 - 不要复活旧的 `vehicle_valid` 作为 `you_died` 主路径。
 - 不要把 recovery 作为 v1 当前任务；它只保留测试方案和 TODO。
-- 不要沿用旧的 pre-T-Safety / pre-identity 测试数量；当前逻辑自检应以 `102/102 passed` 为准。
+- 不要沿用旧的 pre-T-Safety / pre-identity 测试数量；当前逻辑自检应以 `104/104 passed` 为准。
 - 不要在父仓库 `N.E.K.O` 里提交这个独立插件仓库。
