@@ -1,8 +1,9 @@
 """接缝②自检：把真实 /api/telemetry 样本喂 parse_telemetry，核对字段/flag。
 
 用法：
-- 抓样本：`curl http://localhost:8112/api/telemetry > plugin/plugins/neko_warthunder/contract/telemetry_sample.json`
-- 看报告：`uv run python plugin/plugins/neko_warthunder/tests/test_real_sample.py`
+- 抓 raw 样本：`curl http://localhost:8112/api/telemetry > local_samples/live_current/telemetry_sample.json`
+- 只有脱敏后的样本才允许更新 `contract/telemetry_sample.json`。
+- 看报告：`uv run python tests/test_real_sample.py`
 - 或随单测一起跑（无样本则跳过，不报失败）。
 """
 
@@ -55,6 +56,26 @@ def test_real_sample_if_present():
     # 在战样本应能拿到载具/速度等任一字段（粗校验解析有效）
     if s.in_battle:
         assert s.conn_state == "in_battle"
+
+
+def test_contract_telemetry_sample_is_sanitized_v16_shape():
+    assert _SAMPLE.exists()
+    payload = json.loads(_SAMPLE.read_text(encoding="utf-8"))
+
+    s = parse_telemetry(payload)
+
+    assert s.connected is True
+    assert s.in_battle is True
+    assert s.conn_state == "in_battle"
+    assert s.domain == "air"
+    assert s.vehicle_valid is True
+    assert s.flag("overspeed_warn") is True
+    assert s.combat["self"]["source"] == "manual"
+    assert s.hud_notices[0]["code"] == "engine_overheat"
+    assert payload["awards"]["feed"][0]["code"] == "final_blow"
+    assert "raw" not in payload
+    assert "text" not in payload["hud_notices"]["feed"][0]
+    assert "text" not in payload["awards"]["feed"][0]
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # T-Observe: runtime decision timeline
 
-> 状态：设计计划 / TODO。当前不实现代码。等 M3 v1.6 DTO 适配提交后，再决定是否进入实现。
+> 状态：已完成轻量实现。Always-on minimal observability、默认关闭的内存 debug ring buffer、Dispatcher/Arbiter 记录、Hosted UI `observe` context 与合同测试均已落地。下一步是真机 dry_run 验证它是否足够解释未播 / 晚播。
 
 ## 目标
 
@@ -273,11 +273,9 @@ observe:
 observability_max_events = 100
 ```
 
-## 测试计划
+## 测试覆盖
 
-实现前先写 RED 测试。
-
-必须覆盖：
+已通过 `tests/test_observability.py` 覆盖：
 
 1. Always-on minimal observability
    - 只保留最新 `last_decision`。
@@ -330,11 +328,17 @@ observability_max_events = 100
 - 不写同步磁盘日志。
 - 不记录 raw 玩家名 / hudmsg / combat.feed / awards 原文。
 
-## 推荐顺序
+## 当前落地位置
 
-1. 先提交 M3 v1.6 DTO 适配。
-2. 再进入 T-Observe RED 测试。
-3. 实现 Always-on minimal observability。
-4. 实现默认关闭的 Debug timeline ring buffer。
-5. 将最小 observe 状态暴露给 Hosted UI context。
-6. 真机 dry_run 验证链路解释能力。
+- `core/contracts.py`：`observability_enabled`、`observability_max_events`、`observability_include_prompt_preview` 配置项。
+- `adapters/runtime_timeline.py`：轻量内存状态与 debug ring buffer。
+- `adapters/neko_dispatcher.py`：记录 `dispatcher_dry_run` / `dispatcher_pushed` / `dispatcher_failed`。
+- `__init__.py`：轮询 tick、Detector candidate、Arbiter chain、Hosted UI `observe` context 接入。
+- `plugin.toml`：默认关闭 debug timeline。
+- `tests/test_observability.py`：合同测试。
+
+## 后续验证顺序
+
+1. 真机 dry_run 时查看 `observe.last_event` / `observe.last_decision` / `observe.last_output_status` 是否能解释未播、晚播、dry_run 输出或 push 失败。
+2. 只有在普通摘要不够排障时，再临时开启 `observability_enabled=true` 检查 `recent_timeline`。
+3. 如果真机反馈字段不够，再补 Hosted UI debug 展示或新增 metadata；不要改变 Battle Awareness 语义。

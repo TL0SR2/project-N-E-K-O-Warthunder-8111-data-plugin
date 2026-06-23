@@ -1,0 +1,197 @@
+"""Render a human-oriented live test plan from safe sample readiness data."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import pathlib
+import sys
+import types
+from typing import Any
+
+_BASE = pathlib.Path(__file__).resolve().parent.parent
+if "neko_warthunder" not in sys.modules:
+    _pkg = types.ModuleType("neko_warthunder")
+    _pkg.__path__ = [str(_BASE)]  # type: ignore[attr-defined]
+    sys.modules["neko_warthunder"] = _pkg
+
+from neko_warthunder.tools.sample_replay import replay_sample_root  # noqa: E402
+
+
+_ACTION_DETAILS: dict[str, dict[str, str]] = {
+    "capture_replay_true_sample": {
+        "operation": "进入回放或录像播放，保持插件在线但不要关闭 dry_run。",
+        "monitor": "/api/telemetry.replay、observe.last_decision、dry_run / push 日志。",
+        "pass": "replay=true 时 Detector 静默，observe.last_decision=detector_suppressed/replay，且没有 BattleEvent 输出。",
+        "fail": "replay=true 时仍出现 BattleEvent、dry_run 输出或真实 push。",
+        "data_gap": "如果整轮没有 replay=true，只记录为缺真实 replay 样本。",
+    },
+    "run_free_text_dry_run_safety_check": {
+        "operation": "只在 dry_run=true 下触发 combat.feed / hud_notices / awards，不测试真实播报。",
+        "monitor": "dry_run 输出、Dispatcher prompt、push_message.parts[].text、T-Safety 记录。",
+        "pass": "输出只包含 safe / generic 摘要，不包含玩家名、HUD 原文、combat.feed 原文或 awards 原文。",
+        "fail": "prompt 或输出中出现未净化自由文本，先停用该类播报并修 T-Safety。",
+        "data_gap": "如果没有出现对应 DTO，只保留为待补样本。",
+    },
+    "capture_awards_or_free_text_sample": {
+        "operation": "制造或等待 awards、HUD notice、combat feed 等自由文本来源出现。",
+        "monitor": "coverage.awards_items、hud_notice_codes、combat_feed_items、T-Safety dry_run 输出。",
+        "pass": "样本包含自由文本来源，且 dry_run 合同不泄漏原文。",
+        "fail": "自由文本绕过 sanitizer 或无法进入 dry_run 决策链。",
+        "data_gap": "如果没有 awards / hud_notices / combat.feed，继续向数据层要样本。",
+    },
+    "use_v16_combat_feed_ownership_fields": {
+        "operation": "手动设置 identity 后打出 owned kill/death，优先空战和陆战各一次。",
+        "monitor": "combat.feed[].is_my_kill / is_my_death / involves_me、combat.self.source、you_killed / you_died。",
+        "pass": "ownership 字段为 true 时插件生成 you_killed / you_died，并经 Arbiter / Dispatcher 输出。",
+        "fail": "字段为 true 但插件不出事件，按插件 DTO 接缝 bug 处理。",
+        "data_gap": "如果 combat.feed 没有 ownership 字段，归为数据层 v1.6 样本缺口。",
+    },
+    "set_manual_identity_before_capture": {
+        "operation": "开局前在面板输入玩家名并确认 /api/identity 返回 manual。",
+        "monitor": "/api/identity、combat.self.source、combat.player_name、ownership 字段。",
+        "pass": "combat.self.source=manual，后续 kill/death ownership 围绕该名字生效。",
+        "fail": "identity 设置成功但 combat.self 没有切到 manual。",
+        "data_gap": "如果数据层没有暴露 combat.self/source，保留为数据层接缝缺口。",
+    },
+    "capture_owned_kill_or_death": {
+        "operation": "触发一次我方击杀或死亡，记录新 combat.feed 项。",
+        "monitor": "combat.feed id 单调性、is_my_kill、is_my_death、you_killed、you_died。",
+        "pass": "新 feed id 只触发一次对应事件，重复帧不重复播。",
+        "fail": "同一 feed id 重复触发，或 true 字段未转成事件。",
+        "data_gap": "字段存在但没有 true 命中时，继续补 owned 样本。",
+    },
+    "trigger_overspeed_critical": {
+        "operation": "空战中拉到超速 critical，保持 dry_run=true。",
+        "monitor": "processed.flags.overspeed_critical、overspeed/critical、observe.last_decision。",
+        "pass": "Detector 产生 overspeed/critical，Arbiter 决策可解释 allow/drop/cooldown。",
+        "fail": "flag 出现但 Detector 没有候选事件。",
+        "data_gap": "只有 overspeed_warn 没有 critical 时，继续补高速样本。",
+    },
+    "capture_oil_overheat_notice": {
+        "operation": "制造油温过热或等待数据层数据库补齐后复测。",
+        "monitor": "hud_notices.feed[].code=oil_overheat、overheat 事件、T-Safety 输出。",
+        "pass": "oil_overheat code-only 映射到 overheat，且不带 HUD 原文。",
+        "fail": "oil_overheat 出现但插件未映射，或 raw HUD 文本进入输出。",
+        "data_gap": "如果数据层仍没有 oil_overheat code，等待 profile/database 补齐。",
+    },
+    "wait_for_powertrain_profile_or_sample": {
+        "operation": "等待动力故障 profile/database 或真实 powertrain_failure 样本。",
+        "monitor": "hud_notices.feed[].code、profile/database 版本、是否应提升为事件。",
+        "pass": "有稳定 code 后再决定是否映射，不靠猜测开播报。",
+        "fail": "无稳定字段时插件侧不应硬造事件。",
+        "data_gap": "没有 powertrain_failure 样本或数据库时，保持 TODO。",
+    },
+    "verify_hud_notice_severity_mapping": {
+        "operation": "采集 warning / critical notice 档位样本。",
+        "monitor": "hud_notice_severities、事件 level、observe.last_decision。",
+        "pass": "severity 能稳定映射 warning / critical。",
+        "fail": "severity 不稳定时继续使用保守默认档位。",
+        "data_gap": "只有 unknown severity 时，继续补数据层映射。",
+    },
+}
+
+
+def build_compact_plan(root: str | pathlib.Path, *, player_name: str = "tl0sr2") -> dict[str, Any]:
+    report = replay_sample_root(root, player_name=player_name)
+    summary = report.get("session_summary") or {}
+    steps = [_step_from_item(item) for item in summary.get("live_test_plan") or [] if isinstance(item, dict)]
+    return {
+        "root": report.get("root"),
+        "files": report.get("files"),
+        "frames": report.get("frames"),
+        "status": summary.get("status") or "unknown",
+        "steps": steps,
+        "next_steps": list(summary.get("next_steps") or []),
+        "coverage_gaps": list(report.get("coverage_gaps") or []),
+    }
+
+
+def build_markdown_plan(root: str | pathlib.Path, *, player_name: str = "tl0sr2") -> str:
+    payload = build_compact_plan(root, player_name=player_name)
+    lines = [
+        "# neko_warthunder live test plan",
+        "",
+        f"- sample root: `{payload.get('root')}`",
+        f"- frames: `{payload.get('frames')}`",
+        f"- status: `{payload.get('status')}`",
+        "",
+    ]
+    steps = payload.get("steps") or []
+    if not steps:
+        lines.extend(["## No live-test gaps", "", "- 当前样本没有生成额外真机待测项。"])
+    for step in steps:
+        lines.extend(
+            [
+                f"## {step['priority']} {step['label']}",
+                "",
+                f"- 操作：{step['operation']}",
+                f"- 监控：{step['monitor']}",
+                f"- 通过：{step['pass']}",
+                f"- 失败：{step['fail']}",
+                f"- 数据层缺口：{step['data_gap']}",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "## Safety boundary",
+            "",
+            "- 全程不记录玩家名、HUD 原文、combat.feed 原文或 awards 原文。",
+            "- 自由文本路径只做 dry_run 安全验证，通过前不做真实播报。",
+        ]
+    )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _step_from_item(item: dict[str, Any]) -> dict[str, Any]:
+    action = str(item.get("action") or "")
+    detail = _ACTION_DETAILS.get(action, _fallback_detail(action))
+    return {
+        "priority": item.get("priority") or "P?",
+        "area": item.get("area") or "unknown",
+        "label": item.get("label") or item.get("area") or "unknown",
+        "status": item.get("status") or "unknown",
+        "action": action,
+        "operation": detail["operation"],
+        "monitor": detail["monitor"],
+        "pass": detail["pass"],
+        "fail": detail["fail"],
+        "data_gap": detail["data_gap"],
+    }
+
+
+def _fallback_detail(action: str) -> dict[str, str]:
+    return {
+        "operation": f"按 `{action or 'unknown'}` 补充样本或真机验证。",
+        "monitor": "observe.last_decision、observe.last_output_status、dry_run 输出。",
+        "pass": "链路可解释且不泄漏自由文本原文。",
+        "fail": "出现不可解释输出、真实 push 异常或安全合同破坏。",
+        "data_gap": "缺少对应 DTO 时记录为数据层样本缺口。",
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Render the next neko_warthunder live-test operation plan.")
+    parser.add_argument("root", nargs="?", default=str(_BASE / "local_samples" / "data_process_20260620"))
+    parser.add_argument("player_name", nargs="?", default="tl0sr2")
+    parser.add_argument("--output", help="Write Markdown plan to this path instead of stdout.")
+    parser.add_argument("--json", action="store_true", help="Print a compact safe JSON plan.")
+    args = parser.parse_args(argv)
+
+    if args.json:
+        print(json.dumps(build_compact_plan(args.root, player_name=args.player_name), ensure_ascii=False, sort_keys=True))
+        return 0
+
+    markdown = build_markdown_plan(args.root, player_name=args.player_name)
+    if args.output:
+        out = pathlib.Path(args.output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(markdown, encoding="utf-8")
+    else:
+        print(markdown, end="")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

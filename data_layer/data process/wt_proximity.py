@@ -27,7 +27,10 @@ def _pos_num(v: Any) -> float | None:
 
 
 def resolve_proximity_thresholds(
-    profiles: dict[str, Any] | None, domain: str | None, vtype: str | None
+    profiles: dict[str, Any] | None,
+    domain: str | None,
+    vtype: str | None,
+    family_rules: list[dict[str, Any]] | None = None,
 ) -> tuple[float | None, float | None]:
     """解析接近告警距离，返回 (对空中敌人, 对地面/海面敌人) 两个阈值(米)。
 
@@ -45,7 +48,9 @@ def resolve_proximity_thresholds(
     prox = prox if isinstance(prox, dict) else {}
 
     if domain in ("air", "heli"):
-        cfg, matched = _merge_profile(profiles, vtype)
+        cfg, matched, _source, _family = _merge_profile(
+            profiles, vtype, "air" if domain == "air" else None, family_rules or []
+        )
         t = _pos_num(cfg.get("proximity_warn_m")) if matched else None
         if t is None:
             key = "heli_default" if domain == "heli" else "air_default"

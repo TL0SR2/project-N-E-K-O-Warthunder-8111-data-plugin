@@ -8,6 +8,7 @@ from neko_warthunder.core.contracts import (
     CRITICAL_RISK,
     DEAD,
     IN_FLIGHT,
+    SPAWNING,
     BattleEvent,
     WtConfig,
 )
@@ -22,6 +23,18 @@ def test_scenario_gating_drops_low_fuel_in_combat():
     chosen, chain = _arb().decide([BattleEvent("low_fuel", level="warning")], COMBAT_STRESS, 1000.0)
     assert chosen is None
     assert any(c["result"] == "dropped" and "scenario_gated" in c["reason"] for c in chain)
+
+
+def test_spawning_allows_owned_kill_event():
+    chosen, chain = _arb().decide([BattleEvent("you_killed", level="warning")], SPAWNING, 1000.0)
+    assert chosen is not None and chosen.event_id == "you_killed"
+    assert any(c["result"] == "spoken" and c["reason"] == "window_flush" for c in chain)
+
+
+def test_spawning_still_gates_flight_safety_warning():
+    chosen, chain = _arb().decide([BattleEvent("overheat", level="warning")], SPAWNING, 1000.0)
+    assert chosen is None
+    assert any(c["result"] == "dropped" and c["reason"] == "scenario_gated(SPAWNING)" for c in chain)
 
 
 def test_idle_immediate_warning():

@@ -11,6 +11,7 @@ import json
 import pathlib
 import sys
 import types
+import argparse
 from collections import Counter
 from typing import Any, Iterable
 
@@ -22,6 +23,7 @@ if "neko_warthunder" not in sys.modules:
 
 from neko_warthunder.adapters.neko_dispatcher import NekoDispatcher  # noqa: E402
 from neko_warthunder.adapters.telemetry_client import parse_telemetry  # noqa: E402
+from neko_warthunder.adapters.event_labels import display_event_key  # noqa: E402
 from neko_warthunder.core.arbiter import Arbiter  # noqa: E402
 from neko_warthunder.core.contracts import BattleState, WtConfig  # noqa: E402
 from neko_warthunder.core.safety_guard import SafetyGuard  # noqa: E402
@@ -87,6 +89,21 @@ def replay_sample_root(root: str | pathlib.Path, *, player_name: str = "") -> di
         "chosen": Counter(),
         "dry_run_outputs": Counter(),
         "sample_files": [str(p.relative_to(root)) if pathlib.Path(root) in p.parents else str(p) for p in files],
+        "coverage": {
+            "replay_true": 0,
+            "combat_feed_items": 0,
+            "is_my_kill_field": 0,
+            "is_my_death_field": 0,
+            "involves_me_field": 0,
+            "is_my_kill_true": 0,
+            "is_my_death_true": 0,
+            "involves_me_true": 0,
+            "combat_self_source": Counter(),
+            "active_players_max": 0,
+            "hud_notice_codes": Counter(),
+            "hud_notice_severities": Counter(),
+            "awards_items": 0,
+        },
     }
 
     prev = BattleState()
@@ -95,6 +112,7 @@ def replay_sample_root(root: str | pathlib.Path, *, player_name: str = "") -> di
         for row in _iter_jsonl(path):
             payload = _unwrap_payload(row)
             cur = parse_telemetry(payload)
+            _record_coverage(report["coverage"], payload)
             report["frames"] += 1
             report["states"][cur.conn_state] += 1
             report["domains"][cur.domain] += 1
@@ -119,11 +137,277 @@ def replay_sample_root(root: str | pathlib.Path, *, player_name: str = "") -> di
     return _plain_report(report)
 
 
+def _record_coverage(coverage: dict[str, Any], payload: dict[str, Any]) -> None:
+    if payload.get("replay") is True:
+        coverage["replay_true"] += 1
+
+    combat = payload.get("combat") if isinstance(payload.get("combat"), dict) else {}
+    feed = combat.get("feed") if isinstance(combat.get("feed"), list) else []
+    coverage["combat_feed_items"] += len(feed)
+    for item in feed:
+        if not isinstance(item, dict):
+            continue
+        if "is_my_kill" in item:
+            coverage["is_my_kill_field"] += 1
+        if "is_my_death" in item:
+            coverage["is_my_death_field"] += 1
+        if "involves_me" in item:
+            coverage["involves_me_field"] += 1
+        if item.get("is_my_kill") is True:
+            coverage["is_my_kill_true"] += 1
+        if item.get("is_my_death") is True:
+            coverage["is_my_death_true"] += 1
+        if item.get("involves_me") is True:
+            coverage["involves_me_true"] += 1
+
+    self_info = combat.get("self") if isinstance(combat.get("self"), dict) else None
+    if self_info:
+        coverage["combat_self_source"][str(self_info.get("source") or "unknown")] += 1
+
+    active_players = combat.get("active_players") if isinstance(combat.get("active_players"), list) else []
+    coverage["active_players_max"] = max(coverage["active_players_max"], len(active_players))
+
+    notices = payload.get("hud_notices") if isinstance(payload.get("hud_notices"), dict) else {}
+    notice_feed = notices.get("feed") if isinstance(notices.get("feed"), list) else []
+    for item in notice_feed:
+        if isinstance(item, dict):
+            coverage["hud_notice_codes"][str(item.get("code") or "unknown")] += 1
+            coverage["hud_notice_severities"][str(item.get("severity") or "unknown")] += 1
+
+    awards = payload.get("awards") if isinstance(payload.get("awards"), dict) else {}
+    awards_feed = awards.get("feed") if isinstance(awards.get("feed"), list) else []
+    coverage["awards_items"] += len(awards_feed)
+
+
 def _plain_report(report: dict[str, Any]) -> dict[str, Any]:
     plain = dict(report)
     for key in ("states", "domains", "flags", "events", "chosen", "dry_run_outputs"):
         plain[key] = dict(report[key])
+    plain["coverage"] = _plain_value(report["coverage"])
+    plain["coverage_gaps"] = _coverage_gaps(plain)
+    plain["session_summary"] = _session_summary(plain)
     return plain
+
+
+def _session_summary(report: dict[str, Any]) -> dict[str, Any]:
+    gaps = list(report.get("coverage_gaps") or [])
+    next_steps = _next_steps_for_gaps(gaps)
+    if report.get("files", 0) == 0:
+        next_steps.insert(0, "add_sample_capture")
+    if report.get("frames", 0) > 0 and not report.get("dry_run_outputs"):
+        next_steps.append("inspect_detector_or_arbiter_chain")
+
+    checks = _validation_checks(report)
+    return {
+        "status": "ready_for_live_review" if not next_steps else "needs_more_samples",
+        "observed_events": sorted((report.get("events") or {}).keys()),
+        "observed_event_labels": [display_event_key(key) for key in sorted((report.get("events") or {}).keys())],
+        "chosen_events": sorted((report.get("chosen") or {}).keys()),
+        "chosen_event_labels": [display_event_key(key) for key in sorted((report.get("chosen") or {}).keys())],
+        "observed_outputs": sorted((report.get("dry_run_outputs") or {}).keys()),
+        "observed_output_labels": [
+            display_event_key(key) for key in sorted((report.get("dry_run_outputs") or {}).keys())
+        ],
+        "validation_checks": checks,
+        "next_steps": _dedupe(next_steps),
+        "live_test_plan": _live_test_plan(checks),
+    }
+
+
+def _validation_checks(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    coverage = report.get("coverage") or {}
+    flags = report.get("flags") or {}
+    notice_codes = coverage.get("hud_notice_codes") or {}
+    severities = coverage.get("hud_notice_severities") or {}
+
+    numeric_missing: list[str] = []
+    if flags.get("overspeed_critical", 0) == 0:
+        numeric_missing.append("overspeed_critical")
+
+    ownership_missing: list[str] = []
+    has_ownership_fields = (
+        coverage.get("is_my_kill_field", 0) > 0
+        or coverage.get("is_my_death_field", 0) > 0
+        or coverage.get("involves_me_field", 0) > 0
+    )
+    has_owned_hit = (
+        coverage.get("is_my_kill_true", 0) > 0
+        or coverage.get("is_my_death_true", 0) > 0
+        or coverage.get("involves_me_true", 0) > 0
+    )
+    combat_self_source = coverage.get("combat_self_source") or {}
+    if not has_ownership_fields:
+        ownership_missing.append("ownership_fields")
+    elif not has_owned_hit:
+        ownership_missing.append("owned_kill_or_death")
+    if combat_self_source.get("manual", 0) == 0:
+        ownership_missing.append("manual_identity")
+
+    free_text_observed: list[str] = []
+    free_text_missing: list[str] = []
+    if coverage.get("combat_feed_items", 0) > 0:
+        free_text_observed.append("combat_feed")
+    else:
+        free_text_missing.append("combat_feed")
+    if notice_codes:
+        free_text_observed.append("hud_notices")
+    else:
+        free_text_missing.append("hud_notices")
+    if coverage.get("awards_items", 0) > 0:
+        free_text_observed.append("awards")
+    else:
+        free_text_missing.append("awards")
+
+    profile_missing: list[str] = []
+    if notice_codes and notice_codes.get("oil_overheat", 0) == 0:
+        profile_missing.append("oil_overheat")
+    if notice_codes and notice_codes.get("powertrain_failure", 0) == 0:
+        profile_missing.append("powertrain_failure")
+    if severities and set(severities) == {"unknown"}:
+        profile_missing.append("hud_notice_severity")
+
+    return {
+        "numeric_safety": {
+            "status": "ready_for_review" if not numeric_missing else "needs_more_samples",
+            "missing": numeric_missing,
+        },
+        "ownership": {
+            "status": "ready_for_review" if not ownership_missing else "needs_more_samples",
+            "missing": ownership_missing,
+        },
+        "free_text_safety": {
+            "status": "dry_run_only" if free_text_observed and not free_text_missing else "needs_more_samples",
+            "observed": sorted(free_text_observed),
+            "missing": sorted(free_text_missing),
+            "real_output_blocked": True,
+        },
+        "replay_degrade": {
+            "status": "sample_seen" if coverage.get("replay_true", 0) > 0 else "needs_more_samples",
+            "missing": [] if coverage.get("replay_true", 0) > 0 else ["replay_true"],
+        },
+        "profile_calibration": {
+            "status": "ready_for_review" if not profile_missing else "needs_more_samples",
+            "missing": profile_missing,
+        },
+    }
+
+
+def _live_test_plan(checks: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    plan: list[dict[str, Any]] = []
+
+    def add(area: str, label: str, status: str, priority: str, action: str) -> None:
+        plan.append({"area": area, "label": label, "status": status, "priority": priority, "action": action})
+
+    replay = checks.get("replay_degrade") or {}
+    if replay.get("status") == "needs_more_samples":
+        add("replay_degrade", "回放降级", "needs_more_samples", "P1", "capture_replay_true_sample")
+
+    free_text = checks.get("free_text_safety") or {}
+    if free_text.get("status") == "dry_run_only":
+        add("free_text_safety", "自由文本安全", "dry_run_only", "P1", "run_free_text_dry_run_safety_check")
+    elif free_text.get("status") == "needs_more_samples":
+        add("free_text_safety", "自由文本安全", "needs_more_samples", "P1", "capture_awards_or_free_text_sample")
+
+    ownership = checks.get("ownership") or {}
+    ownership_missing = set(ownership.get("missing") or [])
+    if ownership.get("status") == "needs_more_samples":
+        action = "capture_owned_kill_or_death"
+        if "ownership_fields" in ownership_missing:
+            action = "use_v16_combat_feed_ownership_fields"
+        elif "manual_identity" in ownership_missing:
+            action = "set_manual_identity_before_capture"
+        add("ownership", "击杀/死亡归属", "needs_more_samples", "P1", action)
+
+    numeric = checks.get("numeric_safety") or {}
+    if numeric.get("status") == "needs_more_samples":
+        add("numeric_safety", "数值安全事件", "needs_more_samples", "P2", "trigger_overspeed_critical")
+
+    profile = checks.get("profile_calibration") or {}
+    profile_missing = set(profile.get("missing") or [])
+    if profile.get("status") == "needs_more_samples":
+        action = "capture_oil_overheat_notice"
+        if "powertrain_failure" in profile_missing and "oil_overheat" not in profile_missing:
+            action = "wait_for_powertrain_profile_or_sample"
+        elif "hud_notice_severity" in profile_missing and "oil_overheat" not in profile_missing:
+            action = "verify_hud_notice_severity_mapping"
+        add("profile_calibration", "油温/动力故障校准", "needs_more_samples", "P2", action)
+
+    return plan
+
+
+def _next_steps_for_gaps(gaps: list[str]) -> list[str]:
+    mapping = {
+        "no_replay_true_frames": "capture_replay_true_sample",
+        "no_overspeed_critical_flags": "trigger_overspeed_critical",
+        "combat_feed_missing_ownership_fields": "use_v16_combat_feed_ownership_fields",
+        "combat_feed_no_ownership_true_frames": "capture_owned_kill_or_death",
+        "no_manual_identity_frames": "set_manual_identity_before_capture",
+        "no_awards_items": "capture_awards_or_free_text_sample",
+        "no_oil_overheat_notice_codes": "capture_oil_overheat_notice",
+        "no_powertrain_failure_notice_codes": "wait_for_powertrain_profile_or_sample",
+        "hud_notice_severity_unknown": "verify_hud_notice_severity_mapping",
+    }
+    return [mapping[gap] for gap in gaps if gap in mapping]
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
+def _coverage_gaps(report: dict[str, Any]) -> list[str]:
+    coverage = report.get("coverage") or {}
+    flags = report.get("flags") or {}
+    gaps: list[str] = []
+    if coverage.get("replay_true", 0) == 0:
+        gaps.append("no_replay_true_frames")
+    if flags.get("overspeed_critical", 0) == 0:
+        gaps.append("no_overspeed_critical_flags")
+    if coverage.get("combat_feed_items", 0) > 0 and (
+        coverage.get("is_my_kill_field", 0) == 0
+        and coverage.get("is_my_death_field", 0) == 0
+        and coverage.get("involves_me_field", 0) == 0
+    ):
+        gaps.append("combat_feed_missing_ownership_fields")
+    elif (
+        coverage.get("is_my_kill_field", 0) > 0
+        or coverage.get("is_my_death_field", 0) > 0
+        or coverage.get("involves_me_field", 0) > 0
+    ) and (
+        coverage.get("is_my_kill_true", 0) == 0
+        and coverage.get("is_my_death_true", 0) == 0
+        and coverage.get("involves_me_true", 0) == 0
+    ):
+        gaps.append("combat_feed_no_ownership_true_frames")
+    combat_self_source = coverage.get("combat_self_source") or {}
+    if combat_self_source.get("manual", 0) == 0:
+        gaps.append("no_manual_identity_frames")
+    if coverage.get("awards_items", 0) == 0:
+        gaps.append("no_awards_items")
+
+    notice_codes = coverage.get("hud_notice_codes") or {}
+    if notice_codes and notice_codes.get("oil_overheat", 0) == 0:
+        gaps.append("no_oil_overheat_notice_codes")
+    if notice_codes and notice_codes.get("powertrain_failure", 0) == 0:
+        gaps.append("no_powertrain_failure_notice_codes")
+    severities = coverage.get("hud_notice_severities") or {}
+    if severities and set(severities) == {"unknown"}:
+        gaps.append("hud_notice_severity_unknown")
+    return gaps
+
+
+def _plain_value(value: Any) -> Any:
+    if isinstance(value, Counter):
+        return dict(value)
+    if isinstance(value, dict):
+        return {k: _plain_value(v) for k, v in value.items()}
+    return value
 
 
 def render_report(report: dict[str, Any]) -> str:
@@ -137,8 +421,34 @@ def render_report(report: dict[str, Any]) -> str:
         f"candidate_events: {_fmt_counts(report['events'])}",
         f"chosen_events: {_fmt_counts(report['chosen'])}",
         f"dry_run_outputs: {_fmt_counts(report['dry_run_outputs'])}",
+        f"coverage: {_fmt_coverage(report.get('coverage') or {})}",
+        f"coverage_gaps: {_fmt_list(report.get('coverage_gaps') or [])}",
+        f"session_summary: {_fmt_session_summary(report.get('session_summary') or {})}",
     ]
     return "\n".join(lines)
+
+
+def _fmt_coverage(coverage: dict[str, Any]) -> str:
+    if not coverage:
+        return "-"
+    parts: list[str] = []
+    for key in (
+        "replay_true",
+        "combat_feed_items",
+        "is_my_kill_field",
+        "is_my_death_field",
+        "involves_me_field",
+        "is_my_kill_true",
+        "is_my_death_true",
+        "involves_me_true",
+        "active_players_max",
+        "awards_items",
+    ):
+        parts.append(f"{key}={coverage.get(key, 0)}")
+    parts.append(f"combat_self_source={_fmt_counts(coverage.get('combat_self_source') or {})}")
+    parts.append(f"hud_notice_codes={_fmt_counts(coverage.get('hud_notice_codes') or {})}")
+    parts.append(f"hud_notice_severities={_fmt_counts(coverage.get('hud_notice_severities') or {})}")
+    return ", ".join(parts)
 
 
 def _fmt_counts(counts: dict[str, int]) -> str:
@@ -147,13 +457,67 @@ def _fmt_counts(counts: dict[str, int]) -> str:
     return ", ".join(f"{key}={value}" for key, value in sorted(counts.items()))
 
 
-def main(argv: list[str]) -> int:
-    root = pathlib.Path(argv[1]) if len(argv) > 1 else _BASE / "local_samples" / "data_process_20260620"
-    player_name = argv[2] if len(argv) > 2 else "tl0sr2"
+def _fmt_list(values: list[str]) -> str:
+    if not values:
+        return "-"
+    return ", ".join(values)
+
+
+def _fmt_session_summary(summary: dict[str, Any]) -> str:
+    if not summary:
+        return "-"
+    return ", ".join(
+        [
+            f"status={summary.get('status') or 'unknown'}",
+            f"observed_events={_fmt_list(list(summary.get('observed_events') or []))}",
+            f"chosen_events={_fmt_list(list(summary.get('chosen_events') or []))}",
+            f"observed_outputs={_fmt_list(list(summary.get('observed_outputs') or []))}",
+            f"validation_checks={_fmt_validation_checks(summary.get('validation_checks') or {})}",
+            f"next_steps={_fmt_list(list(summary.get('next_steps') or []))}",
+            f"live_test_plan={_fmt_live_test_plan(list(summary.get('live_test_plan') or []))}",
+        ]
+    )
+
+
+def _fmt_validation_checks(checks: dict[str, Any]) -> str:
+    if not checks:
+        return "-"
+    parts: list[str] = []
+    for key, value in checks.items():
+        if not isinstance(value, dict):
+            continue
+        detail = value.get("missing") or value.get("observed") or []
+        suffix = f"({_fmt_list(list(detail))})" if detail else ""
+        parts.append(f"{key}:{value.get('status') or 'unknown'}{suffix}")
+    return "; ".join(parts) if parts else "-"
+
+
+def _fmt_live_test_plan(plan: list[dict[str, Any]]) -> str:
+    if not plan:
+        return "-"
+    return "; ".join(
+        f"{item.get('priority')}:{item.get('label')}:{item.get('status')}->{item.get('action')}"
+        for item in plan
+        if isinstance(item, dict)
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Replay local data-layer samples through neko_warthunder logic.")
+    parser.add_argument("root", nargs="?", default=str(_BASE / "local_samples" / "data_process_20260620"))
+    parser.add_argument("player_name", nargs="?", default="tl0sr2")
+    parser.add_argument("--json", action="store_true", help="Print the full safe replay report as JSON.")
+    args = parser.parse_args(argv)
+
+    root = pathlib.Path(args.root)
+    player_name = args.player_name
     report = replay_sample_root(root, player_name=player_name)
-    print(render_report(report))
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    else:
+        print(render_report(report))
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main(sys.argv[1:]))

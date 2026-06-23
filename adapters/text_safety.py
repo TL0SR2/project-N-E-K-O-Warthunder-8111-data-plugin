@@ -40,11 +40,18 @@ _NAME_FIELDS = {
 _RAW_TEXT_FIELDS = {
     "hudmsg",
     "hudmsg_text",
+    "hud_text",
+    "notice_text",
     "raw_text",
     "combat_feed_text",
+    "combat_feed_raw",
     "feed_text",
+    "feed_raw",
     "award_text",
+    "award_name",
+    "award_title",
     "awards_text",
+    "awards",
 }
 
 
@@ -76,7 +83,7 @@ def sanitize_event_payload(event_id: str, payload: dict[str, Any]) -> tuple[dict
     name_fallback = _name_fallback(event_id)
 
     for key, value in dict(payload or {}).items():
-        if key.startswith("raw_") or key in _RAW_TEXT_FIELDS:
+        if _is_free_text_key(key):
             decisions.append(sanitize_free_text(value))
             continue
         if key in _NAME_FIELDS:
@@ -99,6 +106,21 @@ def sanitize_event_payload(event_id: str, payload: dict[str, Any]) -> tuple[dict
             continue
         safe[key] = value
     return safe, decisions
+
+
+def _is_free_text_key(key: object) -> bool:
+    text = str(key or "").lower()
+    if text.startswith("raw_") or text in _RAW_TEXT_FIELDS:
+        return True
+    if text in {"hud_notices", "hud_notice", "combat_feed", "award", "awards"}:
+        return True
+    if text in {"award_name", "award_title", "hud_text", "notice_text", "feed_raw", "combat_feed_raw"}:
+        return True
+    if any(marker in text for marker in ("hudmsg", "combat_feed")):
+        return True
+    if any(text.endswith(suffix) for suffix in ("_raw", "_text", "_message", "_msg", "_line")):
+        return any(marker in text for marker in ("hud", "notice", "feed", "award", "combat"))
+    return False
 
 
 def _to_text(value: object) -> str:

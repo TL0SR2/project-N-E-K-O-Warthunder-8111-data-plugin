@@ -78,3 +78,21 @@ def test_sanitize_event_payload_keeps_raw_out_of_prompt_payload():
     assert UNSAFE_FEED_TEXT not in str(safe_payload)
     assert UNSAFE_AWARD_TEXT not in str(safe_payload)
     assert any(item.level in {"redacted", "blocked"} for item in decisions)
+
+
+def test_sanitize_event_payload_blocks_free_text_field_families_even_when_plain():
+    safe_payload, decisions = _text_safety().sanitize_event_payload(
+        "battle_end",
+        {
+            "hud_text": "plain HUD message",
+            "notice_text": "plain technical notice",
+            "combat_feed_raw": "plain combat feed line",
+            "award_name": "plain award title",
+            "award_title": "plain award title",
+            "awards": [{"text": "plain award item"}],
+            "result": "win",
+        },
+    )
+
+    assert safe_payload == {"result": "win"}
+    assert sum(1 for item in decisions if item.level == "blocked") >= 6

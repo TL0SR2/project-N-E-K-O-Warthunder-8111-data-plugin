@@ -1,6 +1,6 @@
 # 真机验证 checklist
 
-> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、identity Hosted UI/action 接缝已完成；逻辑自检以 `66/66 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
+> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、T-Observe runtime decision timeline、T-Live live monitor summary tool、identity Hosted UI/action 接缝已完成；逻辑自检以 `105/105 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
 
 ## 已完成的 Hosted UI Smoke
 
@@ -14,6 +14,7 @@
 
 - 三个 health 均正常：主后端 `48911`、Hosted UI `48916`、数据层 `8112`。
 - Hosted UI `dashboard` context 可持续返回 `dry_run`、连接状态、scenario、safety、observe last decision/output。
+- T-Observe 普通模式已可通过 `observe.last_event` / `observe.last_decision` / `observe.last_output_status` 辅助判断链路停在哪一步；debug timeline 默认关闭。
 - `pause` 已验证：`safety.status=paused`、`manual_paused=true`，风险事件被 Arbiter 以 `reason=paused` suppress。
 - `resume` 已验证：`safety.status=running`、`manual_paused=false`，恢复后 `low_alt_danger` 可被 Arbiter allowed 并进入 dry_run dispatcher。
 - `test_say` 已验证：宿主日志出现多条 `TRIGGER entry='test_say'`，未出现 `PLUGIN_UI_ACTION_FAILED`。
@@ -21,24 +22,80 @@
 - 数值安全链路已观察到：`stall_risk`、`low_alt_danger`，并保留此前 `overspeed`、`low_fuel`、`you_died` dry_run 观察结论。
 - 未发现 Traceback / ERROR / TTS push 报错。
 
+## 已完成的真机 dry_run Smoke（2026-06-23）
+
+- 三个 health 均正常：主后端 `48911`、Hosted UI `48916`、数据层 `8112`；测试结束后端口已关闭。
+- 同日追加空战 dry_run 监控中，`:8111` 原生遥测和 `:8112` 数据层正常，插件日志链路正常；该轮 `48911` / `48916` 未监听，因此只作为运行主链路证据，不替代 Hosted UI smoke。
+- Hosted UI context 持续返回 `dry_run=true`、`conn_state=in_battle`、scenario、safety、`observe.last_event`、`observe.last_decision`、`observe.last_output_status`。
+- `spawn` 已进入 Arbiter allowed，并由 Dispatcher 走 dry_run。
+- `overspeed_warn` / `overspeed_critical` 已由数据层 `processed.flags` 触发；插件生成 `overspeed/enter`，Arbiter allowed，Dispatcher dry_run 输出。
+- `low_fuel` 已观察到 warning / critical dry_run 输出；后续重复低油在 `COMBAT_STRESS` / `CRITICAL_RISK` 下可被 scenario gate 丢弃。
+- `low_alt_danger` 已观察到 warning / critical dry_run；重复 critical 命中时可被 cooldown 丢弃。
+- `stall_risk` 已观察到 warning / critical dry_run；critical 可由 Arbiter 以 `reason=preempt` 放行。
+- `overheat` 已观察到 warning / critical dry_run；后续重复 critical 命中可被 cooldown 丢弃，说明基础链路和 cooldown 都可解释。
+- `you_died` 已观察到 `critical` 事件并 dry_run 输出；不把 `vehicle_valid` 跳变作为主路径。
+- 追加空战监控确认坠毁类 `combat.feed` 可产生 `is_my_death=true`，插件生成 `you_died/enter/critical`，Arbiter 以 `preempt` 放行，Dispatcher 输出 dry_run。
+- 手动 identity 接缝已验证：Hosted UI 设置玩家名后，数据层返回 `combat.self.source=manual`，并观察到 owned `combat.feed[].is_my_kill=true` / `is_my_death=true` 路径。
+- `you_killed` 已由 owned combat.feed 产生并 dry_run 输出；此前 `SPAWNING` 门控问题已修复。
+- identity 设置时机已确认：若死亡 feed 在手动 identity 设置前已被 Detector 按 id 消费，后续同一 feed id 变为 `is_my_death=true` 不会补发；应在进战局前或死亡前设置 `/api/identity`。
+- T-Observe 普通模式已能解释 allow / preempt / cooldown / dry_run 输出；debug timeline 仍默认关闭。
+- 未发现 `PLUGIN_UI_ACTION_FAILED`、后端 Traceback、TTS/push 报错。
+- 已知数据层问题：`/api/telemetry.telemetry` 字段为空，但 `processed.*` 可用；map/profile 轮询曾持续出现 `_merge_profile() missing ... army and family_rules`。该签名回归已补代码修复和测试；下次重启数据层后确认日志不再重复。
+
+## 已完成的 kill/death 与真实 push Smoke（2026-06-23）
+
+- 空战 owned kill：数据层返回 `domain=air`，`combat.feed` 出现 `is_my_kill=true`；用于确认 air combat.feed ownership 字段可用。
+- 空战 owned death：数据层返回 `domain=air` 且新 `combat.feed` 出现 `is_my_death=true`；插件生成 `you_died`，Arbiter preempt，Dispatcher dry_run 输出。
+- 陆战 owned kill：数据层返回 `domain=ground`，`combat.feed` 多条 `is_my_kill=true`；插件生成 `you_killed`，Arbiter allowed，Dispatcher dry_run 输出。
+- 陆战 owned death：数据层返回 `combat.feed` 中 `is_my_death=true`；插件生成 `you_died`，Arbiter allowed，Dispatcher dry_run 输出。
+- `dry_run=false` 真实 push：关闭 dry_run 后，`test_say`、`you_killed`、`you_died` 均进入 proactive bridge / `push_message` 链路；Hosted UI `observe.last_output_status` 显示 `dispatcher_pushed` / `push_message_accepted`。
+- 现场确认猫娘实际开口；未发现 `PLUGIN_UI_ACTION_FAILED`、Traceback、TTS/push 报错。
+- 记录边界：本节只记录聚合结论，不写 raw 玩家名、raw combat.feed 原文或 raw HUD 文本。
+
 待复核：
 
-- 过热/炸缸：真机 UI 出现油温橙/红、发动机黄、炸缸现象；插件侧已补 `hud_notices.feed[].code=engine_overheat/oil_overheat` 到 `overheat` 的映射。后续需要真机复测该接缝；`powertrain_failure` 暂不直接播报。
+- replay 降级：插件侧离线合同已覆盖 Detector 静默与 `detector_suppressed/replay` 观测记录；仍需真实 `replay=true` 样本验证。
+- 油温/发动机细项：过热基础链路已过；油温 / 发动机温度数据库和 `powertrain_failure` 策略仍后置，`powertrain_failure` 暂不直接播报。
+
+## 下一轮统一测试现场顺序
+
+> 目标：先在 `dry_run=true` 下验证 v1.6 DTO 接缝和 T-Observe 解释能力；只有数值安全事件 dry_run 稳定后，才考虑 `dry_run=false`。
+
+1. **离线门禁**：按 `docs/统一测试前-离线检查.md` 跑完逻辑测试、pytest、plugin check、合成 replay、本地样本 replay。
+2. **启动链路**：启动 N.E.K.O 宿主、Hosted UI、数据层 `:8112`，确认三项 health 正常。
+   - 当前工作区通过 junction 挂载独立插件仓库；若宿主没有发现 `neko_warthunder`，用 `PLUGIN_CONFIG_ROOT=D:\Users\zheng\Documents\Code\N-E-K-O-Warthunder` 重启宿主，再调用 `/plugins/refresh` 与 `/plugin/neko_warthunder/start`。
+   - Hosted UI 侧以 context `state_empty=false`、actions 包含 `set_dry_run` / `pause` / `resume` / `test_say` / `set_identity` 作为注册通过信号。
+3. **打开面板**：确认 `dry_run=true`，观察 `connected` / `conn_state` / `in_battle` / `scenario` / `safety` / `observe.last_decision` / `observe.last_output_status`。
+4. **基础 action**：依次点 `pause`、`resume`、`test_say`，确认没有 `PLUGIN_UI_ACTION_FAILED`；`pause` 时风险事件应被 suppress，`resume` 后恢复。
+5. **identity / owned combat 回归**：在 Hosted UI 设置游戏昵称，确认 `/api/identity` 与 `/api/telemetry.combat.self.source=manual`；击杀 / 死亡时确认 `is_my_kill=true` / `is_my_death=true` 仍能生成 `you_killed` / `you_died`，并由 T-Observe 解释 Arbiter / Dispatcher 输出。
+6. **数值安全事件**：优先复测 `overheat` / `oil_overheat`、`overspeed_critical`、`stall_risk`、`low_alt_danger`、`low_fuel`；每次看 `observe.last_decision` 是否能解释 allow / drop / cooldown / scenario gate。
+7. **自由文本风险路径**：只在 `dry_run=true` 下观察 `combat.feed` / `hud_notices` / `awards`，确认 prompt / dry_run 输出不包含 raw 玩家名、raw HUD 文本或 awards 原文。
+8. **replay 降级**：若数据层返回 `replay=true`，确认 Detector 静默、last decision 能说明 suppressed / replay，不触发真实输出。
+9. **样本留存**：把现场抓包放到 `local_samples/` 或本地临时目录，保持 `.gitignore`；仓库只提交聚合统计和脱敏结论。
+10. **真实开口**：只有前面 dry_run 通过后，才关闭 dry_run；`test_say`、generic kill/death 已在 2026-06-23 通过真实 push smoke。hudmsg / awards / 其他 free-text 仍需各自 dry_run 安全验证后再开放真实播报。
+
+每轮测完后，用 `docs/真机测试结果-template.md` 记录结果；只写聚合统计、安全摘要和结论，不写 raw 玩家名、raw HUD 文本、raw combat.feed 或 awards 原文。
+
+现场优先级：
+
+- 第一优先：replay=true、awards/free-text dry_run 安全合同。
+- 第二优先：油温/发动机数据库补齐后的细项复测、powertrain_failure 是否继续不播。
+- 第三优先：`dry_run=false` 数值安全事件真实开口延迟和刷屏情况。
 
 ## 剩余接缝
 
 - NEKO 宿主加载与插件生命周期。
-- 数据层 `:8112` v1.6 DTO 与插件解析。
-- `dry_run` 决策链路是否能解释每一步（基础安全链路已通过一轮，剩余见下方待复核）。
-- `push_message` 真实开口链路。
-- T-Safety 已完成；kill/death/hudmsg/combat.feed/awards 在真机 dry_run 验证前仍不做真实自由文本播报。
+- 数据层 `:8112` v1.6 DTO 与插件解析（基础数值安全链路、identity/ownership、`you_killed` / `you_died` 已通过，剩余 replay/free-text 单项）。
+- `dry_run` 决策链路是否能解释每一步（2026-06-23 已证明 always-on observe 摘要足够解释主要安全事件）。
+- `push_message` 真实开口链路（generic kill/death 已通过，其他事件仍需按项验证）。
+- T-Safety 已完成；generic kill/death 已通过真实输出 smoke，hudmsg / awards / 其他 free-text 在真机 dry_run 验证前仍不做真实播报。
 
 ## 接缝 1：插件能否被 NEKO 加载
 
 1. 在 N.E.K.O 宿主仓库运行插件检查：
 
    ```powershell
-   uv run python -m plugin.neko_plugin_cli.cli check plugin/plugins/neko_warthunder
+   uv run python -m plugin.neko_plugin_cli.cli check D:\Users\zheng\Documents\Code\N-E-K-O-Warthunder\project-N-E-K-O-Warthunder-8111-data-plugin
    ```
 
    预期：`0 error`。
@@ -47,9 +104,10 @@
 
    ```powershell
    uv run python tests/run_logic_tests.py
+   uv run pytest -c tests\pytest.ini tests -q
    ```
 
-   预期：`66/66 passed`。
+   预期：`105/105 passed`。
 
 3. 启动宿主后启动插件，确认 `status` / Hosted UI context 可返回状态。
 
@@ -81,8 +139,21 @@
 2. 抓取样本：
 
    ```powershell
-   curl http://localhost:8112/api/telemetry > contract/telemetry_sample.json
+   New-Item -ItemType Directory -Force local_samples\live_current | Out-Null
+   curl http://localhost:8112/api/telemetry > local_samples\live_current\telemetry_sample.json
    ```
+
+   仓库内已有一份脱敏的 v1.6 形状样本 `contract/telemetry_sample.json`，用于合同测试。真机验证时另抓当前环境帧到 `.gitignore` 覆盖的 `local_samples/` 做对照；不要把 raw 玩家名、raw HUD 文本、raw combat.feed 或 awards 原文写回 tracked contract 文件。
+
+   已留存的本地样本可先做离线覆盖率审计：
+
+   ```powershell
+   uv run python tools/sample_replay.py local_samples/data_process_20260620 tl0sr2
+   ```
+
+   当前样本的聚合回放结论见 `docs/样本回放-20260620.md`。该报告只记录统计和缺口，不提交原始抓包文本；`session_summary` 可直接给出已观察事件、dry_run 输出、分组 validation verdict、P1/P2 `live_test_plan` 和下一步补测项。需要机器可读结果时使用 `--json`，需要可交付 Markdown 汇报时使用 `tools/offline_report.py`；需要操作清单时使用 `tools/live_test_plan.py`；真机测试进行中用 `tools/live_monitor.py` 做只读安全摘要，并查看 `free_text=dry_run_only(...)` 是否按预期出现。该报告包含 Team brief 和 Next live-test plan，也可通过 `tools/preflight.py --run --report-output <path>` 在统一预检时保存并打印操作清单。
+
+   重点看输出 `coverage:` 行里的 `is_my_kill_field` / `is_my_death_field` / `involves_me_field`、`is_my_kill_true` / `is_my_death_true` / `involves_me_true`、`combat_self_source`、`hud_notice_codes`、`hud_notice_severities`、`awards_items`、`replay_true`，以及 `coverage_gaps:` 行。如果 `coverage_gaps` 含 `combat_feed_missing_ownership_fields`，说明样本里完全没有新归属字段；如果含 `combat_feed_no_ownership_true_frames`，说明字段存在但样本没有命中我方击杀/死亡。两种情况都不能关闭 kill/death identity 验证项。若 `coverage_gaps` 含 `no_manual_identity_frames`，说明当前样本没有 `combat.self.source=manual`，不能关闭手动 `/api/identity` 接缝验证。若 `coverage_gaps` 含 `no_awards_items`、`no_overspeed_critical_flags`、`no_oil_overheat_notice_codes`、`no_powertrain_failure_notice_codes` 或 `hud_notice_severity_unknown`，说明当前样本还不能验证 awards、超速 critical、油温 notice、动力故障 notice 或 notice warning/critical 档位。
 
 3. 必查字段：
 
@@ -102,7 +173,7 @@
    Hosted UI 面板点击“清除玩家名”
    ```
 
-   预期：设置后 `combat.self.source=manual`，`combat.player_name` 等于面板输入昵称；后续 `combat.feed[]` 的 `is_my_kill` / `is_my_death` 能围绕该昵称生效。active players 点选自己仍可作为后续 UI 增强。
+   预期：设置后 `combat.self.source=manual`，`combat.player_name` 等于面板输入昵称；`combat.feed[]` 的 `is_my_kill` / `is_my_death` 能围绕该昵称生效。2026-06-23 已观察到该正向路径，并已确认 `you_killed` post-fix dry_run / push 输出。active players 点选自己仍可作为后续 UI 增强。
 
 5. replay seam：
 
@@ -124,23 +195,23 @@
 
 注意：
 
-- overspeed 不再是数据层缺口，但插件侧仍需要验证 flag 是否能触发正确事件。
-- 2026-06-21 已验证低空 / 失速 / pause / resume / test_say 基础链路；过热/炸缸已补插件侧 `hud_notices` code 映射，仍需真机 dry_run 复测。
-- kill/death/hudmsg/combat.feed/awards 在真机 dry_run 验证前只做 dry_run / audit，不做正式播报。
+- overspeed 不再是数据层缺口；2026-06-23 已验证 warning/critical flag 能触发正确事件并进入 dry_run。
+- 2026-06-21 已验证 pause / resume / test_say 基础链路；2026-06-23 已验证低空 / 失速 / 超速 / 过热 / 死亡 dry_run 基础链路。
+- generic kill/death 已通过真机 dry_run 与真实 push；hudmsg / awards / 其他 free-text 在真机 dry_run 验证前只做 dry_run / audit，不做正式播报。
 
 ## 接缝 5：dry_run=false 真实开口
 
 前置：
 
 - 数值安全事件接缝已在 dry_run 下通过。
-- T-Safety 已完成；还需要真机 dry_run 验证后，才允许测试 kill/death/hudmsg/combat.feed/awards 的真实播报。
+- T-Safety 已完成；generic kill/death 已通过真机 dry_run 与真实 push。hudmsg / awards / 其他 free-text 还需要真机 dry_run 验证后，才允许测试真实播报。
 
 步骤：
 
 1. 通过 Hosted UI 或 action 关闭 dry_run。
-2. 只先测试数值安全事件真实开口。
+2. 先测试数值安全事件或 T-Safety-safe generic 事件真实开口。
 3. 观察是否刷屏、滞后或抢占异常。
-4. 再按 T-Safety 完成情况决定是否开放 kill/death/hudmsg/combat.feed/awards。
+4. 再按 T-Safety 和 dry_run 结果决定是否开放 hudmsg / awards / 其他 free-text。
 
 ## 暂缓项
 
