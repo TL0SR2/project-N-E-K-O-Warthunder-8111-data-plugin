@@ -34,7 +34,7 @@
 | `overspeed` | 连续派生 | 危急 | 7 | 8 | 是 | 15s | IN_FLIGHT / COMBAT_STRESS →CRITICAL |
 | `overheat` | 连续派生 / HUD notice | 重要提醒 | 6 | 6 | 否 | 30s | IN_FLIGHT / COMBAT_STRESS |
 | `low_fuel` | 连续派生 | 一般提醒 | 3 | 4 | 否 | 每局 1–2 次 | IN_FLIGHT |
-| `you_killed` | combat.feed 离散 | 战斗 | 3 | 5 | 否 | 8s（多杀合并） | IN_FLIGHT / COMBAT_STRESS |
+| `you_killed` | combat.feed 离散 | 战斗 | 3 | 5 | 否 | 8s（多杀合并） | SPAWNING / IN_FLIGHT / COMBAT_STRESS |
 | `you_died` | combat.feed 离散 | 生命周期 | 8 | 10 | 是 | 每次死亡 1 次 | DEAD（死亡瞬间） |
 | `spawn` | 生命周期 | 生命周期 | 1 | 5 | 否 | 每次出生 1 次 | SPAWNING |
 | `battle_end` | 生命周期 | 生命周期 | 1 | 6 | 否 | 每局 1 次 | BATTLE_ENDED |
@@ -122,8 +122,9 @@
 - 中文说明：玩家击落/摧毁了敌方单位。
 - 来源信号：`/api/telemetry.combat.feed[]` 中新的 `id`，且 `is_my_kill == true`。
 - 触发条件摘要：数据层已完成身份归属判定；插件只按新 id 去重并消费 ownership flag。
-- 允许 Scenario：IN_FLIGHT、COMBAT_STRESS。
-- 被抑制 Scenario：CRITICAL_RISK、SPAWNING、OUT_OF_BATTLE、DEAD、BATTLE_ENDED。
+- 允许 Scenario：SPAWNING、IN_FLIGHT、COMBAT_STRESS。
+- 被抑制 Scenario：CRITICAL_RISK、OUT_OF_BATTLE、DEAD、BATTLE_ENDED。
+- SPAWNING 说明：只放行数据层已归属的 owned kill；飞行安全事件仍由 spawn grace 压制，避免刚进场误报。
 - severity 3 / priority 5 / 抢占 否 / cooldown 8s（**多杀合并**：短窗内多条合成一次"连杀 N"）。
 - re-arm：新的 combat.feed 击杀 id。
 - payload：`target_name`（可选）、`target_vehicle`（可选）、`killstreak_count`。

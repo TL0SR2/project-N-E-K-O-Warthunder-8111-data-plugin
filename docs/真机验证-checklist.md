@@ -1,6 +1,6 @@
 # 真机验证 checklist
 
-> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、T-Observe runtime decision timeline、identity Hosted UI/action 接缝已完成；逻辑自检以 `78/78 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
+> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、T-Observe runtime decision timeline、identity Hosted UI/action 接缝已完成；逻辑自检以 `80/80 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
 
 ## 已完成的 Hosted UI Smoke
 
@@ -31,7 +31,9 @@
 - `low_alt_danger` 已观察到 warning/critical 场景下的 dry_run；重复 critical 命中时可被 cooldown 丢弃。
 - `stall_risk` 已观察到 `critical` 事件；Arbiter 以 `reason=preempt` 放行，Dispatcher dry_run 输出。
 - `overheat` 已观察到 warning dry_run 输出；后续 critical 命中在 cooldown 内被丢弃，说明基础链路和 cooldown 都可解释。
-- `you_died` 已观察到 `critical` 事件并 dry_run 输出；后续仍需 identity/ownership 真机验证，不把 `vehicle_valid` 跳变作为主路径。
+- `you_died` 已观察到 `critical` 事件并 dry_run 输出；不把 `vehicle_valid` 跳变作为主路径。
+- 手动 identity 接缝已验证：Hosted UI 设置玩家名后，数据层返回 `combat.self.source=manual`，并观察到 owned `combat.feed[].is_my_kill=true` / `is_my_death=true` 路径。
+- `you_killed` 候选已由 owned combat.feed 产生，但当时处于 `SPAWNING`，被 Arbiter 以 `scenario_gated(SPAWNING)` 丢弃；commit `0ae2ff4` 已修复为出生 grace 内允许 owned combat kill、继续压制飞行安全事件，下一轮需要复测 `you_killed` dry_run 输出。
 - `low_fuel` 未关闭验证项：现场确认 `fuel_fraction=0.0` / `fuel_kg=0.0` / `fuel_remaining_sec=0.0`，但未观测到独立 `low_fuel` 事件，且该瞬间被坠毁/死亡状态覆盖；需要单独慢速低油验证。
 - T-Observe 普通模式已能解释 allow / preempt / cooldown / dry_run 输出；debug timeline 仍默认关闭。
 - 未发现 `PLUGIN_UI_ACTION_FAILED`、后端 Traceback、TTS/push 报错。
@@ -39,7 +41,7 @@
 
 待复核：
 
-- identity + kill ownership：面板设置玩家名后，继续验证 `/api/identity`、`combat.self.source=manual`、`is_my_kill` / `is_my_death`。
+- `you_killed` post-fix：面板设置玩家名后，击杀一次，确认 owned kill 不再被 `scenario_gated(SPAWNING)` 压住，并进入 Dispatcher dry_run。
 - replay 降级：仍需真实 `replay=true` 样本验证 Detector 静默。
 - `low_fuel`：需要不混入坠毁/低空/死亡的慢速单项验证。
 - 油温/发动机细项：过热基础链路已过；油温 / 发动机温度数据库和 `powertrain_failure` 策略仍后置，`powertrain_failure` 暂不直接播报。
@@ -52,7 +54,7 @@
 2. **启动链路**：启动 N.E.K.O 宿主、Hosted UI、数据层 `:8112`，确认三项 health 正常。
 3. **打开面板**：确认 `dry_run=true`，观察 `connected` / `conn_state` / `in_battle` / `scenario` / `safety` / `observe.last_decision` / `observe.last_output_status`。
 4. **基础 action**：依次点 `pause`、`resume`、`test_say`，确认没有 `PLUGIN_UI_ACTION_FAILED`；`pause` 时风险事件应被 suppress，`resume` 后恢复。
-5. **identity**：在 Hosted UI 设置游戏昵称，确认 `/api/identity` 与 `/api/telemetry.combat.self.source=manual`；随后用击杀/死亡样本验证 `is_my_kill` / `is_my_death`。
+5. **identity / owned kill复测**：在 Hosted UI 设置游戏昵称，确认 `/api/identity` 与 `/api/telemetry.combat.self.source=manual`；随后击杀一次，确认 `is_my_kill=true` 的 `you_killed` 不再被 `SPAWNING` gate 压住，并进入 Dispatcher dry_run。死亡路径已观察到 `is_my_death=true` 与 `you_died` dry_run，但后续仍可顺手复核。
 6. **数值安全事件**：优先复测 `overheat` / `oil_overheat`、`overspeed_critical`、`stall_risk`、`low_alt_danger`、`low_fuel`；每次看 `observe.last_decision` 是否能解释 allow / drop / cooldown / scenario gate。
 7. **自由文本风险路径**：只在 `dry_run=true` 下观察 `combat.feed` / `hud_notices` / `awards`，确认 prompt / dry_run 输出不包含 raw 玩家名、raw HUD 文本或 awards 原文。
 8. **replay 降级**：若数据层返回 `replay=true`，确认 Detector 静默、last decision 能说明 suppressed / replay，不触发真实输出。
@@ -63,14 +65,14 @@
 
 现场优先级：
 
-- 第一优先：identity + kill ownership true、replay=true、`low_fuel` 独立慢速验证。
+- 第一优先：`you_killed` post-fix dry_run 复测、replay=true、`low_fuel` 独立慢速验证。
 - 第二优先：awards/free-text dry_run 安全合同、油温/发动机数据库补齐后的细项复测、powertrain_failure 是否继续不播。
 - 第三优先：`dry_run=false` 数值安全事件真实开口延迟和刷屏情况。
 
 ## 剩余接缝
 
 - NEKO 宿主加载与插件生命周期。
-- 数据层 `:8112` v1.6 DTO 与插件解析（基础数值安全链路已通过，剩余 identity/replay/free-text/low_fuel 单项）。
+- 数据层 `:8112` v1.6 DTO 与插件解析（基础数值安全链路和 identity/ownership 字段已通过，剩余 `you_killed` post-fix 输出、replay/free-text/low_fuel 单项）。
 - `dry_run` 决策链路是否能解释每一步（2026-06-23 已证明 always-on observe 摘要足够解释主要安全事件）。
 - `push_message` 真实开口链路。
 - T-Safety 已完成；kill/death/hudmsg/combat.feed/awards 在真机 dry_run 验证前仍不做真实自由文本播报。
@@ -92,7 +94,7 @@
    uv run pytest -c tests\pytest.ini tests -q
    ```
 
-   预期：`78/78 passed`。
+   预期：`80/80 passed`。
 
 3. 启动宿主后启动插件，确认 `status` / Hosted UI context 可返回状态。
 
@@ -158,7 +160,7 @@
    Hosted UI 面板点击“清除玩家名”
    ```
 
-   预期：设置后 `combat.self.source=manual`，`combat.player_name` 等于面板输入昵称；后续 `combat.feed[]` 的 `is_my_kill` / `is_my_death` 能围绕该昵称生效。active players 点选自己仍可作为后续 UI 增强。
+   预期：设置后 `combat.self.source=manual`，`combat.player_name` 等于面板输入昵称；`combat.feed[]` 的 `is_my_kill` / `is_my_death` 能围绕该昵称生效。2026-06-23 已观察到该正向路径；下一轮重点是确认 `you_killed` post-fix dry_run 输出。active players 点选自己仍可作为后续 UI 增强。
 
 5. replay seam：
 

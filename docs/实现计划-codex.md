@@ -2,7 +2,7 @@
 
 > 面向接手者的当前计划。本文以当前独立插件仓库为准，不再沿用“等待数据层补字段”的旧前提。
 
-## 实现状态（2026-06-21）
+## 实现状态（2026-06-23）
 
 - M1 scaffold 已实现。
 - M2 Battle Awareness 理解/决策主链路已实现。
@@ -12,7 +12,7 @@
 - Hosted UI surface/context/action smoke 已通过。
 - T-Safety output text sanitizer 已完成。
 - T-Observe runtime decision timeline 已完成轻量实现：普通模式只保留最近摘要，debug 模式使用内存 ring buffer。
-- 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `78/78 passed` 为准。
+- 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `80/80 passed` 为准。
 - 数据层 `v1.6` 已合并，包含：
   - `overspeed_warn` / `overspeed_critical`
   - enhanced `combat.feed`
@@ -21,7 +21,7 @@
   - `replay: true` 回放降级
   - `hud_notices`
   - `awards`
-- 真机/数据层/真实开口接缝仍未完整验证；2026-06-23 已完成一轮数值安全 dry_run，覆盖超速 warning/critical、低空、失速、过热基础链路和死亡链路。
+- 真机/数据层/真实开口接缝仍未完整验证；2026-06-23 已完成一轮数值安全 dry_run，覆盖超速 warning/critical、低空、失速、过热基础链路和死亡链路，并验证手动 identity 与 owned combat.feed 归属字段。
 - recovery 仍暂缓，不打开 `wants_recovery`。
 
 ## 当前边界
@@ -40,7 +40,7 @@
 - L2 BattleState：完成基础装配；需要纳入 v1.6 DTO seam 验证。
 - L3 Scenario：完成；`replay: true` 已在 DetectorEngine 静默并 reset，仍需真实 replay 样本验证。
 - L4 Detector：已实现主链路；`overspeed` 已在真机 dry_run 中验证 `overspeed_warn` / `overspeed_critical`；`overheat` 已可消费 `hud_notices.feed[].code=engine_overheat/oil_overheat` 并已观察到基础 dry_run 链路；`you_killed` / `you_died` 已消费 `combat.feed[].is_my_kill` / `combat.feed[].is_my_death`，离线 replay 合成场景也已覆盖该形状。
-- L5 Arbiter：完成；后续 M3 适配时要保持 cooldown、优先级、Scenario 门控语义不变。
+- L5 Arbiter：完成；`SPAWNING` 仍压制飞行安全误报，但已允许 owned combat kill 事件通过，避免真实击杀在出生 grace 内被误压。后续 M3 适配时要保持 cooldown、优先级、Scenario 门控语义不变。
 - L6 Dispatcher / instructions：完成基础输出；T-Safety 已在 prompt builder 前接入，prompt / `push_message.parts[].text` 不允许包含 unsafe raw。
 - L7 safety guard + Hosted UI：完成。
 - T-Observe runtime decision timeline：完成轻量实现；Hosted UI context 暴露 `observe.last_event` / `last_decision` / `last_output_status`，debug timeline 默认关闭。
@@ -82,7 +82,7 @@
 - `overspeed`：读取 `processed.flags` 中的 `overspeed_warn` / `overspeed_critical`；2026-06-23 已真机 dry_run 验证 warning/critical 事件链路。
 - `you_killed`：已监听 `combat.feed[]` 中 `is_my_kill == true` 的新 id，按 id 去重；多杀合并仍可留后续调优。
 - `you_died`：已监听 `combat.feed[]` 中 `is_my_death == true` 的新 id，不再把 `vehicle_valid` 跳变当作唯一可靠死亡信号。
-- `player_name`：通过 `/api/identity` 或启动参数建立权威身份；插件侧 Hosted UI/context/action seam 已完成，仍需真机验证 `combat.self` 与 `is_my_kill` / `is_my_death` 是否按手动昵称生效。
+- `player_name`：通过 `/api/identity` 或启动参数建立权威身份；插件侧 Hosted UI/context/action seam 已完成，2026-06-23 真机已验证 `combat.self.source=manual` 与 `is_my_kill` / `is_my_death` owned 路径。`you_killed` 候选曾被 `SPAWNING` 门控压住，已修复，仍需 post-fix dry_run 复测。
 - `replay: true`：已在 DetectorEngine 静默并 reset，避免回放触发真实播报；仍需真实 replay 样本验证。
 - `overheat`：已接入 `hud_notices.feed[].code` 中的 `engine_overheat` / `oil_overheat`，以 code-only safe payload 生成现有 `overheat`；`powertrain_failure` 暂不直接播报。
 - `hud_notices` / `awards`：属于自由文本风险路径，真实播报前必须先过 T-Safety。
@@ -96,13 +96,13 @@
 - `/api/telemetry` 是否返回 `replay`。
 - `/api/telemetry.processed.flags` 是否出现 `overspeed_warn` / `overspeed_critical`（2026-06-23 已通过真机 dry_run）。
 - `/api/telemetry.combat.feed[]` 是否含稳定递增 id、`is_my_kill`、`is_my_death`。
-- `/api/identity` 是否能由 Hosted UI 面板设置/清除权威 player_name，并反映到 `combat.self` 与 kill/death 归属标记。
+- `/api/identity` 是否能由 Hosted UI 面板设置/清除权威 player_name，并反映到 `combat.self` 与 kill/death 归属标记（2026-06-23 已有真机正向证据；后续重点是复测 `you_killed` 不再被 `SPAWNING` gate 压住）。
 - `hud_notices` 中的技术 code 是否能触发安全事件；raw notice 文本、`awards` 是否只进入 debug/audit 或被 T-Safety 阻断，不直接进入 prompt。
 - T-Observe 的 `observe.last_decision` / `observe.last_output_status` 是否能解释未播、晚播、dry_run 输出或 dispatcher 失败。
 
 ## 推进顺序
 
-1. M3 剩余验证：identity 真机验证、replay 样本验证、`low_fuel` 独立慢速验证、awards/free-text dry_run 验证、failure 字段策略。
+1. M3 剩余验证：post-fix `you_killed` dry-run 复测、replay 样本验证、`low_fuel` 独立慢速验证、awards/free-text dry_run 验证、failure 字段策略。
 2. 真机 checklist 验证 v1.6 接缝，同时用 T-Observe 辅助解释决策链路。
 3. 如 T-Observe 在真机里信息不足，再补 debug timeline 展示/字段。
 4. kill/death/hudmsg/combat.feed/awards 去桩前复核 T-Safety prompt 合同。
@@ -115,5 +115,5 @@
 - 不要把自由文本过滤塞进 Detector / Scenario / Arbiter。
 - 不要复活旧的 `vehicle_valid` 作为 `you_died` 主路径。
 - 不要把 recovery 作为 v1 当前任务；它只保留测试方案和 TODO。
-- 不要沿用旧的 pre-T-Safety / pre-identity 测试数量；当前逻辑自检应以 `78/78 passed` 为准。
+- 不要沿用旧的 pre-T-Safety / pre-identity 测试数量；当前逻辑自检应以 `80/80 passed` 为准。
 - 不要在父仓库 `N.E.K.O` 里提交这个独立插件仓库。
