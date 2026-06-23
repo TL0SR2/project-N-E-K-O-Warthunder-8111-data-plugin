@@ -26,6 +26,7 @@ class Check:
     name: str
     cwd: pathlib.Path
     cmd: list[str]
+    review_hint: str = ""
 
 
 def build_checks(
@@ -65,6 +66,7 @@ def build_checks(
                 "local sample replay",
                 plugin,
                 ["uv", "run", "python", "tools/sample_replay.py", sample_rel, "tl0sr2"],
+                "session_summary for observed outputs and next validation steps",
             )
         )
     return checks
@@ -80,6 +82,8 @@ def print_plan(checks: Sequence[Check]) -> None:
         print(f"{index}. {check.name}")
         print(f"   cwd: {check.cwd}")
         print(f"   cmd: {_format_cmd(check)}")
+        if check.review_hint:
+            print(f"   review: {check.review_hint}")
     print("\nuse --run to execute")
 
 

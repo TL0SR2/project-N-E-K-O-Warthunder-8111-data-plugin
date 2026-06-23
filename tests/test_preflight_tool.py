@@ -71,3 +71,22 @@ def test_preflight_dry_run_prints_commands_without_running():
         assert "uv run pytest -c tests/pytest.ini tests -q" in text
         assert "uv run python tools/replay.py" in text
         assert "use --run to execute" in text
+
+
+def test_preflight_plan_points_sample_replay_to_session_summary():
+    from neko_warthunder.tools import preflight
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        sample_root = root / "local_samples" / "data_process_20260620"
+        sample_root.mkdir(parents=True)
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            rc = preflight.main(["--plugin-root", str(root), "--host-root", str(root / "missing-host")])
+
+        text = output.getvalue()
+        assert rc == 0
+        assert "local sample replay" in text
+        assert "review: session_summary" in text
+        assert "next validation steps" in text
