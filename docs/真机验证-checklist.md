@@ -40,7 +40,7 @@
 - identity 设置时机已确认：若死亡 feed 在手动 identity 设置前已被 Detector 按 id 消费，后续同一 feed id 变为 `is_my_death=true` 不会补发；应在进战局前或死亡前设置 `/api/identity`。
 - T-Observe 普通模式已能解释 allow / preempt / cooldown / dry_run 输出；debug timeline 仍默认关闭。
 - 未发现 `PLUGIN_UI_ACTION_FAILED`、后端 Traceback、TTS/push 报错。
-- 已知数据层问题：`/api/telemetry.telemetry` 字段为空，但 `processed.*` 可用；map/profile 轮询持续出现 `_merge_profile() missing ... army and family_rules`，需数据层侧后续修复或确认影响范围。
+- 已知数据层问题：`/api/telemetry.telemetry` 字段为空，但 `processed.*` 可用；map/profile 轮询曾持续出现 `_merge_profile() missing ... army and family_rules`。该签名回归已补代码修复和测试；下次重启数据层后确认日志不再重复。
 
 ## 已完成的 kill/death 与真实 push Smoke（2026-06-23）
 

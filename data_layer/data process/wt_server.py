@@ -314,7 +314,10 @@ class TelemetryService:
         ind = self._indicators
         domain = detect_domain(ind, True, objs)
         thr_air, thr_ground = resolve_proximity_thresholds(
-            self.processor.profiles, domain, getattr(ind, "vehicle_type", None)
+            self.processor.profiles,
+            domain,
+            getattr(ind, "vehicle_type", None),
+            getattr(self.processor, "_family_rules", []),
         )
         now = time.time()
         # 阵亡待命态：地图“自身”坐标会漂到被观战者身上，敌距/接近全部失真，不再生成接近告警。
