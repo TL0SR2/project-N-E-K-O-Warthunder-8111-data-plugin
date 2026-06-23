@@ -8,8 +8,11 @@ import sys
 import threading
 import types
 
+from neko_warthunder.adapters.runtime_timeline import RuntimeTimeline
+from neko_warthunder.core.arbiter import Arbiter
 from neko_warthunder.core.contracts import BattleState, WtConfig
 from neko_warthunder.core.safety_guard import SafetyGuard
+from neko_warthunder.core.scenario import ScenarioResolver
 
 
 def _runtime_plugin_class():
@@ -94,3 +97,47 @@ def test_status_report_emits_immediately_when_snapshot_changes():
 
     assert len(plugin.reported_statuses) == 2
     assert plugin.reported_statuses[-1]["scenario"] == "CRITICAL_RISK"
+
+
+def test_replay_tick_records_suppressed_decision_without_output():
+    Plugin = _runtime_plugin_class()
+    plugin = object.__new__(Plugin)
+    plugin.cfg = WtConfig()
+    plugin.safety = SafetyGuard(plugin.cfg)
+    plugin.timeline = RuntimeTimeline(observability_enabled=True, max_events=10)
+    plugin.resolver = ScenarioResolver()
+    plugin.arbiter = Arbiter(plugin.safety)
+    plugin.engine = plugin._build_engine()
+    plugin.dispatcher = types.SimpleNamespace(push_event=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError))
+    plugin.logger = types.SimpleNamespace(info=lambda *_args, **_kwargs: None)
+
+    prev = BattleState(connected=True, conn_state="in_battle", in_battle=True, vehicle_valid=True)
+    cur = BattleState(
+        connected=True,
+        conn_state="in_battle",
+        in_battle=True,
+        vehicle_valid=True,
+        replay=True,
+        flags={
+            "stall_critical": True,
+            "altitude_critical": True,
+            "overspeed_critical": True,
+            "fuel_critical": True,
+        },
+        combat={
+            "feed": [
+                {"id": 100, "is_my_kill": True, "victim": "ReplayVictim"},
+                {"id": 101, "is_my_death": True, "killer": "ReplayKiller"},
+            ]
+        },
+        hud_notices=[{"id": 7, "code": "engine_overheat", "severity": "critical", "text": "replay overheat"}],
+    )
+
+    plugin._evaluate(prev, cur)
+
+    observe = plugin.timeline.snapshot()
+    assert observe["last_decision"]["stage"] == "detector_suppressed"
+    assert observe["last_decision"]["outcome"] == "suppressed"
+    assert observe["last_decision"]["reason"] == "replay"
+    assert observe["last_output_status"] is None
+    assert observe["last_event"] is None

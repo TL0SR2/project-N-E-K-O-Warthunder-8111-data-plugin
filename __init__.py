@@ -155,6 +155,27 @@ class NekoWarthunderPlugin(NekoPluginBase):
         now = time.time()
         cur.scenario = self.resolver.resolve(cur, now, self.cfg.spawn_grace_seconds)
         candidates = self.engine.feed(prev, cur)
+        if cur.replay:
+            self.timeline.record_stage(
+                stage="detector_suppressed",
+                outcome="suppressed",
+                reason="replay",
+                scenario=cur.scenario,
+                in_battle=cur.in_battle,
+                replay=True,
+                dry_run=self.cfg.dry_run,
+                safe_summary="replay telemetry suppressed",
+            )
+            self.timeline.record_decision(
+                event_id=None,
+                stage="detector_suppressed",
+                outcome="suppressed",
+                reason="replay",
+                scenario=cur.scenario,
+                safety_status=self.safety.status(),
+                dry_run=self.cfg.dry_run,
+            )
+            return
         for candidate in candidates:
             self.timeline.record_stage(
                 stage="detector_candidate",

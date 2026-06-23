@@ -1,6 +1,6 @@
 # 真机验证 checklist
 
-> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、T-Observe runtime decision timeline、identity Hosted UI/action 接缝已完成；逻辑自检以 `84/84 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
+> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、T-Observe runtime decision timeline、identity Hosted UI/action 接缝已完成；逻辑自检以 `85/85 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
 
 ## 已完成的 Hosted UI Smoke
 
@@ -54,7 +54,7 @@
 
 待复核：
 
-- replay 降级：仍需真实 `replay=true` 样本验证 Detector 静默。
+- replay 降级：插件侧离线合同已覆盖 Detector 静默与 `detector_suppressed/replay` 观测记录；仍需真实 `replay=true` 样本验证。
 - 油温/发动机细项：过热基础链路已过；油温 / 发动机温度数据库和 `powertrain_failure` 策略仍后置，`powertrain_failure` 暂不直接播报。
 
 ## 下一轮统一测试现场顺序
@@ -107,7 +107,7 @@
    uv run pytest -c tests\pytest.ini tests -q
    ```
 
-   预期：`84/84 passed`。
+   预期：`85/85 passed`。
 
 3. 启动宿主后启动插件，确认 `status` / Hosted UI context 可返回状态。
 
