@@ -87,7 +87,7 @@ EVENT_CATALOG: dict[str, EventSpec] = {
 # D-B1 第 4 节门控矩阵：scenario -> 允许的事件类别集合（其余抑制）。
 SCENARIO_GATING: dict[str, frozenset[str]] = {
     OUT_OF_BATTLE: frozenset({CAT_CHATTER}),
-    SPAWNING:      frozenset({CAT_LIFECYCLE}),                       # 只放 spawn；安全/战斗 grace 抑制
+    SPAWNING:      frozenset({CAT_LIFECYCLE, CAT_COMBAT_KILL}),       # 放 spawn/death + 明确归属击杀；安全事件仍受 grace 抑制
     IN_FLIGHT:     frozenset({CAT_LIFECYCLE, CAT_SAFETY_CRITICAL, CAT_SAFETY_IMPORTANT, CAT_SAFETY_MINOR, CAT_COMBAT_KILL, CAT_CHATTER}),
     COMBAT_STRESS: frozenset({CAT_LIFECYCLE, CAT_SAFETY_CRITICAL, CAT_SAFETY_IMPORTANT, CAT_COMBAT_KILL}),
     CRITICAL_RISK: frozenset({CAT_LIFECYCLE, CAT_SAFETY_CRITICAL}),  # 只放危急本身 + 死亡
