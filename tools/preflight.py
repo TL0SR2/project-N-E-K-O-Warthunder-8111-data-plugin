@@ -69,6 +69,14 @@ def build_checks(
                 "session_summary for observed outputs and next validation steps",
             )
         )
+        checks.append(
+            Check(
+                "offline readiness report",
+                plugin,
+                ["uv", "run", "python", "tools/offline_report.py", sample_rel, "tl0sr2"],
+                "Markdown summary for handoff and next live-test scope",
+            )
+        )
     return checks
 
 

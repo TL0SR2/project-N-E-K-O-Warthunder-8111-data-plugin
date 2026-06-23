@@ -28,12 +28,21 @@ def test_preflight_plan_contains_documented_checks():
             "plugin check",
             "synthetic replay",
             "local sample replay",
+            "offline readiness report",
         ]
         assert checks[0].cwd == plugin_root.resolve()
         assert checks[0].cmd == ["uv", "run", "python", "tests/run_logic_tests.py"]
         assert checks[2].cwd == host_root.resolve()
         assert checks[2].cmd[-1] == str(plugin_root.resolve())
         assert checks[-1].cmd == [
+            "uv",
+            "run",
+            "python",
+            "tools/offline_report.py",
+            "local_samples/data_process_20260620",
+            "tl0sr2",
+        ]
+        assert checks[-2].cmd == [
             "uv",
             "run",
             "python",
@@ -53,6 +62,7 @@ def test_preflight_plan_skips_optional_sample_when_missing():
 
         assert "plugin check" not in names
         assert "local sample replay" not in names
+        assert "offline readiness report" not in names
         assert names == ["logic self-check", "pytest", "synthetic replay"]
 
 
