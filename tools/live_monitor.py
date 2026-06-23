@@ -100,6 +100,7 @@ def render_text_report(report: dict[str, Any]) -> str:
     decision = observe.get("last_decision") if isinstance(observe.get("last_decision"), dict) else {}
     output = observe.get("last_output_status") if isinstance(observe.get("last_output_status"), dict) else {}
     combat = telemetry.get("combat") if isinstance(telemetry.get("combat"), dict) else {}
+    free_text = telemetry.get("free_text_safety") if isinstance(telemetry.get("free_text_safety"), dict) else {}
 
     health_line = ", ".join(
         [
@@ -127,6 +128,12 @@ def render_text_report(report: dict[str, Any]) -> str:
             flags=flag_text,
             kill=combat.get("is_my_kill_true", 0),
             death=combat.get("is_my_death_true", 0),
+        ),
+        "FreeText: free_text={status}({sources}), raw_text_fields={raw_fields}, prompt_allowed={prompt_allowed}".format(
+            status=free_text.get("status") or "clear",
+            sources=", ".join(free_text.get("observed_sources") or []) or "-",
+            raw_fields=free_text.get("raw_text_fields_present", False),
+            prompt_allowed=free_text.get("prompt_allowed", False),
         ),
         "Observe: event={event}, decision={stage}/{outcome}/{reason}, output={out_stage}/{outcome2}/{reason2}".format(
             event=_safe_get(observe.get("last_event"), "event_id") or "-",
@@ -237,6 +244,36 @@ def _summarize_telemetry(data: dict[str, Any]) -> dict[str, Any]:
             ),
         },
         "awards": {"items": len(award_feed)},
+        "free_text_safety": _summarize_free_text_safety(feed, hud_feed, award_feed),
+    }
+
+
+def _summarize_free_text_safety(
+    combat_feed: list[Any],
+    hud_feed: list[Any],
+    award_feed: list[Any],
+) -> dict[str, Any]:
+    sources: list[str] = []
+    if combat_feed:
+        sources.append("combat_feed")
+    if hud_feed:
+        sources.append("hud_notices")
+    if award_feed:
+        sources.append("awards")
+    sources = sorted(sources)
+    raw_text_fields = _has_raw_text_fields(combat_feed) or _has_raw_text_fields(hud_feed) or _has_raw_text_fields(award_feed)
+    if not sources:
+        return {
+            "status": "clear",
+            "observed_sources": [],
+            "raw_text_fields_present": False,
+            "prompt_allowed": True,
+        }
+    return {
+        "status": "dry_run_only",
+        "observed_sources": sources,
+        "raw_text_fields_present": raw_text_fields,
+        "prompt_allowed": False,
     }
 
 
@@ -301,6 +338,29 @@ def _safe_get(value: Any, key: str) -> Any:
 
 def _count_true(items: list[Any], key: str) -> int:
     return sum(1 for item in items if isinstance(item, dict) and item.get(key) is True)
+
+
+def _has_raw_text_fields(items: list[Any]) -> bool:
+    raw_keys = {
+        "text",
+        "raw",
+        "raw_text",
+        "message",
+        "hudmsg",
+        "hud_text",
+        "notice_text",
+        "feed_text",
+        "feed_raw",
+        "award_text",
+        "award_name",
+        "award_title",
+    }
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if any(key in item and item.get(key) not in {None, ""} for key in raw_keys):
+            return True
+    return False
 
 
 def _ok_text(value: Any) -> str:
