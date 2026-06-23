@@ -100,3 +100,23 @@ def test_preflight_plan_points_sample_replay_to_session_summary():
         assert "local sample replay" in text
         assert "review: session_summary" in text
         assert "next validation steps" in text
+
+
+def test_preflight_can_write_offline_readiness_report_to_file():
+    from neko_warthunder.tools import preflight
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        sample_root = root / "local_samples" / "data_process_20260620"
+        report_out = root / "out" / "offline-report.md"
+        sample_root.mkdir(parents=True)
+
+        checks = preflight.build_checks(
+            plugin_root=root,
+            host_root=root / "missing-host",
+            report_output=report_out,
+        )
+
+    offline = checks[-1]
+    assert offline.name == "offline readiness report"
+    assert offline.cmd[-2:] == ["--output", str(report_out)]

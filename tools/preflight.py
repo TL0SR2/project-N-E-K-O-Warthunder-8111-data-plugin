@@ -34,6 +34,7 @@ def build_checks(
     plugin_root: str | pathlib.Path,
     host_root: str | pathlib.Path | None = None,
     sample_rel: str = "local_samples/data_process_20260620",
+    report_output: str | pathlib.Path | None = None,
 ) -> list[Check]:
     plugin = pathlib.Path(plugin_root).resolve()
     host = pathlib.Path(host_root).resolve() if host_root is not None else plugin.parent / "N.E.K.O"
@@ -73,11 +74,18 @@ def build_checks(
             Check(
                 "offline readiness report",
                 plugin,
-                ["uv", "run", "python", "tools/offline_report.py", sample_rel, "tl0sr2"],
+                _offline_report_cmd(sample_rel, report_output),
                 "Markdown summary for handoff and next live-test scope",
             )
         )
     return checks
+
+
+def _offline_report_cmd(sample_rel: str, report_output: str | pathlib.Path | None) -> list[str]:
+    cmd = ["uv", "run", "python", "tools/offline_report.py", sample_rel, "tl0sr2"]
+    if report_output is not None:
+        cmd.extend(["--output", str(report_output)])
+    return cmd
 
 
 def _format_cmd(check: Check) -> str:
@@ -117,9 +125,10 @@ def main(argv: list[str] | None = None) -> int:
         help="N.E.K.O host repository root for plugin check.",
     )
     parser.add_argument("--run", action="store_true", help="Execute checks instead of only printing them.")
+    parser.add_argument("--report-output", help="Write the offline readiness Markdown report to this path.")
     args = parser.parse_args(argv)
 
-    checks = build_checks(plugin_root=args.plugin_root, host_root=args.host_root)
+    checks = build_checks(plugin_root=args.plugin_root, host_root=args.host_root, report_output=args.report_output)
     if not args.run:
         print_plan(checks)
         return 0

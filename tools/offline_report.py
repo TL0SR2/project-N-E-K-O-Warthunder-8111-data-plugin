@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import sys
 import types
@@ -29,6 +30,10 @@ def build_markdown_report(root: str | pathlib.Path, *, player_name: str = "tl0sr
         f"- files: `{report.get('files')}`",
         f"- frames: `{report.get('frames')}`",
         f"- status: `{summary.get('status') or 'unknown'}`",
+        "",
+        "## Team brief",
+        "",
+        *build_team_brief(report),
         "",
         "## Observed outputs",
         "",
@@ -68,6 +73,35 @@ def build_markdown_report(root: str | pathlib.Path, *, player_name: str = "tl0sr
     return "\n".join(lines).rstrip() + "\n"
 
 
+def build_compact_report(root: str | pathlib.Path, *, player_name: str = "tl0sr2") -> dict[str, Any]:
+    report = replay_sample_root(root, player_name=player_name)
+    summary = report.get("session_summary") or {}
+    return {
+        "root": report.get("root"),
+        "files": report.get("files"),
+        "frames": report.get("frames"),
+        "status": summary.get("status") or "unknown",
+        "observed_outputs": list(summary.get("observed_outputs") or []),
+        "validation_checks": dict(summary.get("validation_checks") or {}),
+        "remaining_live_scope": _remaining_live_scope(summary),
+        "next_steps": list(summary.get("next_steps") or []),
+        "coverage_gaps": list(report.get("coverage_gaps") or []),
+    }
+
+
+def build_team_brief(report: dict[str, Any]) -> list[str]:
+    summary = report.get("session_summary") or {}
+    checks = summary.get("validation_checks") if isinstance(summary.get("validation_checks"), dict) else {}
+    ready = [key for key, value in checks.items() if isinstance(value, dict) and value.get("status") == "ready_for_review"]
+    blocked = _remaining_live_scope(summary)
+    next_steps = list(summary.get("next_steps") or [])
+    return [
+        f"- ready: {_inline_list(ready)}",
+        f"- blocked: {_inline_list(blocked)}",
+        f"- next: {_inline_list(next_steps[:3])}",
+    ]
+
+
 def _bullet_list(values: list[Any]) -> str:
     if not values:
         return "- none"
@@ -97,11 +131,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("root", nargs="?", default=str(_BASE / "local_samples" / "data_process_20260620"))
     parser.add_argument("player_name", nargs="?", default="tl0sr2")
     parser.add_argument("--output", help="Write Markdown report to this path instead of stdout.")
+    parser.add_argument("--json", action="store_true", help="Print a compact safe JSON report.")
     args = parser.parse_args(argv)
+
+    if args.json:
+        print(json.dumps(build_compact_report(args.root, player_name=args.player_name), ensure_ascii=False, sort_keys=True))
+        return 0
 
     markdown = build_markdown_report(args.root, player_name=args.player_name)
     if args.output:
-        pathlib.Path(args.output).write_text(markdown, encoding="utf-8")
+        out = pathlib.Path(args.output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(markdown, encoding="utf-8")
     else:
         print(markdown, end="")
     return 0

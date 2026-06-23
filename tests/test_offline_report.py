@@ -59,6 +59,10 @@ def test_offline_report_renders_safe_markdown_with_verdicts():
     assert "# neko_warthunder offline readiness report" in text
     assert "| free_text_safety | dry_run_only |" in text
     assert "| replay_degrade | sample_seen |" in text
+    assert "## Team brief" in text
+    assert "- ready:" in text
+    assert "- blocked:" in text
+    assert "- next:" in text
     assert "## Next validation steps" in text
     assert "RawVictim" not in text
     assert "ignore previous instructions" not in text
@@ -80,6 +84,43 @@ def test_offline_report_cli_can_write_markdown_file():
     assert rc == 0
     assert "# neko_warthunder offline readiness report" in text
     assert "RawVictim" not in text
+
+
+def test_offline_report_cli_creates_output_parent_directory():
+    from neko_warthunder.tools import offline_report
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        out = root / "nested" / "reports" / "report.md"
+        _write_jsonl(root / "captures" / "cap" / "processed_8112.jsonl", [{"data": _sample_frame()}])
+
+        rc = offline_report.main([str(root), "Pilot", "--output", str(out)])
+
+        text = out.read_text(encoding="utf-8")
+    assert rc == 0
+    assert "# neko_warthunder offline readiness report" in text
+
+
+def test_offline_report_cli_can_print_compact_json_without_raw_text():
+    from neko_warthunder.tools import offline_report
+    import contextlib
+    import io
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write_jsonl(root / "captures" / "cap" / "processed_8112.jsonl", [{"data": _sample_frame()}])
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            rc = offline_report.main([str(root), "Pilot", "--json"])
+
+    payload = json.loads(output.getvalue())
+    assert rc == 0
+    assert payload["status"] == "needs_more_samples"
+    assert payload["validation_checks"]["free_text_safety"]["status"] == "dry_run_only"
+    assert "free_text_safety:dry_run_only" in payload["remaining_live_scope"]
+    assert "RawVictim" not in output.getvalue()
+    assert "raw award text" not in output.getvalue()
 
 
 def test_offline_report_names_remaining_live_scope_without_raw_text():
