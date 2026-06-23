@@ -11,6 +11,7 @@ import json
 import pathlib
 import sys
 import types
+import argparse
 from collections import Counter
 from typing import Any, Iterable
 
@@ -200,7 +201,78 @@ def _session_summary(report: dict[str, Any]) -> dict[str, Any]:
         "observed_events": sorted((report.get("events") or {}).keys()),
         "chosen_events": sorted((report.get("chosen") or {}).keys()),
         "observed_outputs": sorted((report.get("dry_run_outputs") or {}).keys()),
+        "validation_checks": _validation_checks(report),
         "next_steps": _dedupe(next_steps),
+    }
+
+
+def _validation_checks(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    coverage = report.get("coverage") or {}
+    flags = report.get("flags") or {}
+    notice_codes = coverage.get("hud_notice_codes") or {}
+    severities = coverage.get("hud_notice_severities") or {}
+
+    numeric_missing: list[str] = []
+    if flags.get("overspeed_critical", 0) == 0:
+        numeric_missing.append("overspeed_critical")
+
+    ownership_missing: list[str] = []
+    has_ownership_fields = (
+        coverage.get("is_my_kill_field", 0) > 0
+        or coverage.get("is_my_death_field", 0) > 0
+        or coverage.get("involves_me_field", 0) > 0
+    )
+    has_owned_hit = (
+        coverage.get("is_my_kill_true", 0) > 0
+        or coverage.get("is_my_death_true", 0) > 0
+        or coverage.get("involves_me_true", 0) > 0
+    )
+    combat_self_source = coverage.get("combat_self_source") or {}
+    if not has_ownership_fields:
+        ownership_missing.append("ownership_fields")
+    elif not has_owned_hit:
+        ownership_missing.append("owned_kill_or_death")
+    if combat_self_source.get("manual", 0) == 0:
+        ownership_missing.append("manual_identity")
+
+    free_text_observed: list[str] = []
+    if coverage.get("combat_feed_items", 0) > 0:
+        free_text_observed.append("combat_feed")
+    if notice_codes:
+        free_text_observed.append("hud_notices")
+    if coverage.get("awards_items", 0) > 0:
+        free_text_observed.append("awards")
+
+    profile_missing: list[str] = []
+    if notice_codes and notice_codes.get("oil_overheat", 0) == 0:
+        profile_missing.append("oil_overheat")
+    if notice_codes and notice_codes.get("powertrain_failure", 0) == 0:
+        profile_missing.append("powertrain_failure")
+    if severities and set(severities) == {"unknown"}:
+        profile_missing.append("hud_notice_severity")
+
+    return {
+        "numeric_safety": {
+            "status": "ready_for_review" if not numeric_missing else "needs_more_samples",
+            "missing": numeric_missing,
+        },
+        "ownership": {
+            "status": "ready_for_review" if not ownership_missing else "needs_more_samples",
+            "missing": ownership_missing,
+        },
+        "free_text_safety": {
+            "status": "dry_run_only" if free_text_observed else "needs_more_samples",
+            "observed": sorted(free_text_observed),
+            "real_output_blocked": True,
+        },
+        "replay_degrade": {
+            "status": "sample_seen" if coverage.get("replay_true", 0) > 0 else "needs_more_samples",
+            "missing": [] if coverage.get("replay_true", 0) > 0 else ["replay_true"],
+        },
+        "profile_calibration": {
+            "status": "ready_for_review" if not profile_missing else "needs_more_samples",
+            "missing": profile_missing,
+        },
     }
 
 
@@ -341,18 +413,41 @@ def _fmt_session_summary(summary: dict[str, Any]) -> str:
             f"observed_events={_fmt_list(list(summary.get('observed_events') or []))}",
             f"chosen_events={_fmt_list(list(summary.get('chosen_events') or []))}",
             f"observed_outputs={_fmt_list(list(summary.get('observed_outputs') or []))}",
+            f"validation_checks={_fmt_validation_checks(summary.get('validation_checks') or {})}",
             f"next_steps={_fmt_list(list(summary.get('next_steps') or []))}",
         ]
     )
 
 
-def main(argv: list[str]) -> int:
-    root = pathlib.Path(argv[1]) if len(argv) > 1 else _BASE / "local_samples" / "data_process_20260620"
-    player_name = argv[2] if len(argv) > 2 else "tl0sr2"
+def _fmt_validation_checks(checks: dict[str, Any]) -> str:
+    if not checks:
+        return "-"
+    parts: list[str] = []
+    for key, value in checks.items():
+        if not isinstance(value, dict):
+            continue
+        detail = value.get("missing") or value.get("observed") or []
+        suffix = f"({_fmt_list(list(detail))})" if detail else ""
+        parts.append(f"{key}:{value.get('status') or 'unknown'}{suffix}")
+    return "; ".join(parts) if parts else "-"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Replay local data-layer samples through neko_warthunder logic.")
+    parser.add_argument("root", nargs="?", default=str(_BASE / "local_samples" / "data_process_20260620"))
+    parser.add_argument("player_name", nargs="?", default="tl0sr2")
+    parser.add_argument("--json", action="store_true", help="Print the full safe replay report as JSON.")
+    args = parser.parse_args(argv)
+
+    root = pathlib.Path(args.root)
+    player_name = args.player_name
     report = replay_sample_root(root, player_name=player_name)
-    print(render_report(report))
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    else:
+        print(render_report(report))
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main(sys.argv[1:]))
