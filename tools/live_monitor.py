@@ -115,6 +115,7 @@ def render_text_report(report: dict[str, Any]) -> str:
     )
     flags = telemetry.get("flags") if isinstance(telemetry.get("flags"), list) else []
     flag_text = ", ".join(str(flag) for flag in flags) if flags else "-"
+    free_text_detail = _format_free_text_detail(free_text.get("source_details"))
     lines = [
         "# neko_warthunder live monitor",
         f"Health: {health_line}",
@@ -139,6 +140,7 @@ def render_text_report(report: dict[str, Any]) -> str:
             raw_fields=free_text.get("raw_text_fields_present", False),
             prompt_allowed=free_text.get("prompt_allowed", False),
         ),
+        f"FreeText detail: {free_text_detail}",
         "Replay: replay={status}({stage}/{reason}), output_blocked={output_blocked}, prompt_allowed={prompt_allowed}".format(
             status=replay_degrade.get("status") or "clear",
             stage=replay_degrade.get("decision_stage") or "-",
@@ -264,28 +266,62 @@ def _summarize_free_text_safety(
     hud_feed: list[Any],
     award_feed: list[Any],
 ) -> dict[str, Any]:
-    sources: list[str] = []
-    if combat_feed:
-        sources.append("combat_feed")
-    if hud_feed:
-        sources.append("hud_notices")
-    if award_feed:
-        sources.append("awards")
+    source_items = {
+        "awards": award_feed,
+        "combat_feed": combat_feed,
+        "hud_notices": hud_feed,
+    }
+    sources = sorted(source for source, items in source_items.items() if items)
     sources = sorted(sources)
-    raw_text_fields = _has_raw_text_fields(combat_feed) or _has_raw_text_fields(hud_feed) or _has_raw_text_fields(award_feed)
+    source_details = {
+        source: _free_text_source_detail(items)
+        for source, items in source_items.items()
+        if items
+    }
+    raw_text_fields = any(detail["raw_text_fields_present"] for detail in source_details.values())
+    blocked_reasons = [
+        f"{source}_raw_text"
+        for source, detail in source_details.items()
+        if detail["raw_text_fields_present"]
+    ]
     if not sources:
         return {
             "status": "clear",
             "observed_sources": [],
             "raw_text_fields_present": False,
             "prompt_allowed": True,
+            "source_details": {},
+            "blocked_reasons": [],
         }
     return {
         "status": "dry_run_only",
         "observed_sources": sources,
         "raw_text_fields_present": raw_text_fields,
         "prompt_allowed": False,
+        "source_details": source_details,
+        "blocked_reasons": blocked_reasons,
     }
+
+
+def _free_text_source_detail(items: list[Any]) -> dict[str, Any]:
+    return {
+        "items": len(items),
+        "raw_text_fields_present": _has_raw_text_fields(items),
+        "prompt_allowed": False,
+        "mode": "dry_run_only",
+    }
+
+
+def _format_free_text_detail(value: Any) -> str:
+    details = value if isinstance(value, dict) else {}
+    if not details:
+        return "-"
+    parts: list[str] = []
+    for source in sorted(details):
+        detail = details.get(source) if isinstance(details.get(source), dict) else {}
+        status = "blocked" if detail.get("prompt_allowed") is False else "allowed"
+        parts.append(f"{source}={detail.get('items', 0)}/{status}")
+    return ", ".join(parts)
 
 
 def _summarize_replay_degrade(telemetry: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
