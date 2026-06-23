@@ -78,6 +78,14 @@ def build_checks(
                 "Markdown summary for handoff and next live-test scope",
             )
         )
+        checks.append(
+            Check(
+                "live test plan",
+                plugin,
+                ["uv", "run", "python", "tools/live_test_plan.py", sample_rel, "tl0sr2"],
+                "human operation steps for the next live validation run",
+            )
+        )
     return checks
 
 
