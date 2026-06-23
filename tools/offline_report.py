@@ -56,13 +56,19 @@ def build_markdown_report(root: str | pathlib.Path, *, player_name: str = "tl0sr
             "",
             _bullet_list(report.get("coverage_gaps") or []),
             "",
-            "## Next validation steps",
-            "",
-            _bullet_list(summary.get("next_steps") or []),
-            "",
-            "## Remaining live-test scope",
-            "",
-            _bullet_list(_remaining_live_scope(summary)),
+        "## Next validation steps",
+        "",
+        _bullet_list(summary.get("next_steps") or []),
+        "",
+        "## Next live-test plan",
+        "",
+        "| priority | area | status | action |",
+        "| --- | --- | --- | --- |",
+        *_live_test_plan_rows(summary.get("live_test_plan") or []),
+        "",
+        "## Remaining live-test scope",
+        "",
+        _bullet_list(_remaining_live_scope(summary)),
             "",
             "## Safety notes",
             "",
@@ -83,6 +89,7 @@ def build_compact_report(root: str | pathlib.Path, *, player_name: str = "tl0sr2
         "status": summary.get("status") or "unknown",
         "observed_outputs": list(summary.get("observed_outputs") or []),
         "validation_checks": dict(summary.get("validation_checks") or {}),
+        "live_test_plan": list(summary.get("live_test_plan") or []),
         "remaining_live_scope": _remaining_live_scope(summary),
         "next_steps": list(summary.get("next_steps") or []),
         "coverage_gaps": list(report.get("coverage_gaps") or []),
@@ -124,6 +131,24 @@ def _inline_list(values: list[Any]) -> str:
     if not values:
         return "-"
     return ", ".join(f"`{value}`" for value in values)
+
+
+def _live_test_plan_rows(plan: list[Any]) -> list[str]:
+    if not plan:
+        return ["| - | - | - | - |"]
+    rows: list[str] = []
+    for item in plan:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            "| {priority} | {label} | {status} | {action} |".format(
+                priority=item.get("priority") or "-",
+                label=item.get("label") or "-",
+                status=item.get("status") or "-",
+                action=item.get("action") or "-",
+            )
+        )
+    return rows or ["| - | - | - | - |"]
 
 
 def main(argv: list[str] | None = None) -> int:

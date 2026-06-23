@@ -9,7 +9,7 @@
 - T4 integration tests are complete.
 - `T-Safety: output text sanitizer` is complete.
 - `T-Observe: runtime decision timeline` is implemented in lightweight form: always-on last summaries plus an opt-in in-memory debug ring buffer.
-- Logic self-check currently passes: `95/95`.
+- Logic self-check currently passes: `98/98`.
 - Real-machine smoke passed on 2026-06-21 and 2026-06-23 for Hosted UI context/actions, safety pause/resume, spawn, overspeed warning/critical, low_fuel warning/critical, low-altitude warning/critical, stall warning/critical, overheat warning/critical, identity manual seam, owned kill/death ownership, you_killed / you_died Arbiter decisions, dry-run dispatcher output, and `dry_run=false` push output.
 - 2026-06-23: plugin status reporting was deduped and throttled to avoid host-side `report_status` / ZMQ backpressure spam while still reporting immediately on real state changes.
 - Default runtime mode is `dry_run = true`; the plugin runs the decision chain but does not push real catgirl speech until dry run is disabled.
@@ -20,7 +20,7 @@
 
 - Core contracts, scenario machine, detectors, arbiter, safety guard, dispatcher, runtime observability, tests, replay tool, and Hosted UI panel are present.
 - The offline replay tool's synthetic scenario now covers v1.6 `combat.feed[].is_my_kill` / `is_my_death` kill and death events.
-- `tools/sample_replay.py` now includes a safe `session_summary`, validation-check verdicts, and `--json` output for offline/sample review. `tools/offline_report.py` renders the same safe verdicts as Markdown with a Team brief, or as compact JSON for tooling. `tools/preflight.py --run --report-output <path>` can save the offline readiness report during the full offline gate. These paths avoid raw player/HUD/combat/award text.
+- `tools/sample_replay.py` now includes a safe `session_summary`, validation-check verdicts, P1/P2 `live_test_plan`, safe event display labels, and `--json` output for offline/sample review. `tools/offline_report.py` renders the same safe verdicts as Markdown with a Team brief and Next live-test plan, or as compact JSON for tooling. `tools/preflight.py --run --report-output <path>` can save the offline readiness report during the full offline gate. These paths avoid raw player/HUD/combat/award text.
 - Hosted UI surface, dashboard context, actions, and minimal panel have passed smoke validation.
 - Design docs are complete for the current v1 scope: D-B1 through D-B5, implementation plan, data-layer TODOs, recovery test plan, and real-machine validation checklist.
 - Data-layer blockers are no longer "waiting for fields"; plugin-side v1.6 DTO seams are wired, and the current work is real-machine / sample validation.
@@ -62,7 +62,7 @@ uv run pytest -c tests\pytest.ini tests -q
 Notes:
 
 - `tools/preflight.py --run` also runs plugin check, synthetic replay, local sample replay, and the offline readiness report when the relevant local paths exist. Use `--report-output <path>` to save the Markdown report; parent directories are created automatically. The printed preflight plan points local sample replay users to `session_summary` and the Markdown / JSON report as review entries.
-- `tests/run_logic_tests.py` is the no-host logic self-check and should report `95/95 passed`.
+- `tests/run_logic_tests.py` is the no-host logic self-check and should report `98/98 passed`.
 - The standalone pytest entry uses `tests/pytest.ini` so pytest does not import the host SDK-dependent plugin entrypoint while collecting tests.
 - If an older handoff note still shows the pre-T4 test count, treat it as stale unless it explicitly refers to an older test entry point.
 - The real-machine checklist is in `docs/真机验证-checklist.md`; it now includes the 2026-06-21 dry-run smoke result, the next unified live-test order, and links to the 2026-06-20 offline sample replay report in `docs/样本回放-20260620.md`.

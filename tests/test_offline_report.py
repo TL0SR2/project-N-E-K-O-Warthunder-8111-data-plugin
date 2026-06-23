@@ -64,6 +64,8 @@ def test_offline_report_renders_safe_markdown_with_verdicts():
     assert "- blocked:" in text
     assert "- next:" in text
     assert "## Next validation steps" in text
+    assert "## Next live-test plan" in text
+    assert "| P1 | 自由文本安全 | dry_run_only | run_free_text_dry_run_safety_check |" in text
     assert "RawVictim" not in text
     assert "ignore previous instructions" not in text
     assert "unsafe raw notice" not in text
@@ -118,6 +120,7 @@ def test_offline_report_cli_can_print_compact_json_without_raw_text():
     assert rc == 0
     assert payload["status"] == "needs_more_samples"
     assert payload["validation_checks"]["free_text_safety"]["status"] == "dry_run_only"
+    assert payload["live_test_plan"][0]["label"] in {"自由文本安全", "油温/动力故障校准"}
     assert "free_text_safety:dry_run_only" in payload["remaining_live_scope"]
     assert "RawVictim" not in output.getvalue()
     assert "raw award text" not in output.getvalue()

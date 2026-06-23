@@ -1,0 +1,30 @@
+"""Safe display labels for plugin reports and Hosted UI summaries."""
+
+from __future__ import annotations
+
+
+_EVENT_LABELS: dict[str, str] = {
+    "stall_risk": "失速风险",
+    "low_alt_danger": "低空危险",
+    "overspeed": "超速风险",
+    "overheat": "过热风险",
+    "low_fuel": "低油量",
+    "you_killed": "击杀确认",
+    "you_died": "被击毁",
+    "spawn": "出场",
+    "battle_end": "战局结束",
+}
+
+
+def display_event_id(event_id: str) -> str:
+    """Return a user-facing label while keeping unknown ids debuggable."""
+
+    return _EVENT_LABELS.get(event_id, event_id)
+
+
+def display_event_key(event_key: str) -> str:
+    """Format keys such as ``low_alt_danger/critical`` for reports."""
+
+    event_id, sep, suffix = event_key.partition("/")
+    label = display_event_id(event_id)
+    return f"{label} / {suffix}" if sep else label

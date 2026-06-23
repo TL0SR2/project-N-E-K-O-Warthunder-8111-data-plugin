@@ -277,6 +277,43 @@ def test_sample_replay_session_summary_groups_validation_readiness():
     assert checks["profile_calibration"]["status"] == "needs_more_samples"
 
 
+def test_sample_replay_session_summary_includes_prioritized_live_test_plan():
+    from neko_warthunder.tools.sample_replay import replay_sample_root, render_report
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write_jsonl(root / "captures" / "cap" / "processed_8112.jsonl", [{"data": _coverage_gap_frame()}])
+
+        report = replay_sample_root(root, player_name="Pilot")
+        text = render_report(report)
+
+    plan = report["session_summary"]["live_test_plan"]
+    assert plan[0] == {
+        "area": "replay_degrade",
+        "label": "回放降级",
+        "status": "needs_more_samples",
+        "priority": "P1",
+        "action": "capture_replay_true_sample",
+    }
+    assert {
+        "area": "free_text_safety",
+        "label": "自由文本安全",
+        "status": "needs_more_samples",
+        "priority": "P1",
+        "action": "capture_awards_or_free_text_sample",
+    } in plan
+    assert {
+        "area": "profile_calibration",
+        "label": "油温/动力故障校准",
+        "status": "needs_more_samples",
+        "priority": "P2",
+        "action": "capture_oil_overheat_notice",
+    } in plan
+    assert "live_test_plan=" in text
+    assert "回放降级" in text
+    assert "unsafe notice" not in text
+
+
 def test_sample_replay_json_output_is_machine_readable_and_safe():
     from neko_warthunder.tools import sample_replay
 

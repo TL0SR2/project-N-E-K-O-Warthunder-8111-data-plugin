@@ -23,6 +23,7 @@ if "neko_warthunder" not in sys.modules:
 
 from neko_warthunder.adapters.neko_dispatcher import NekoDispatcher  # noqa: E402
 from neko_warthunder.adapters.telemetry_client import parse_telemetry  # noqa: E402
+from neko_warthunder.adapters.event_labels import display_event_key  # noqa: E402
 from neko_warthunder.core.arbiter import Arbiter  # noqa: E402
 from neko_warthunder.core.contracts import BattleState, WtConfig  # noqa: E402
 from neko_warthunder.core.safety_guard import SafetyGuard  # noqa: E402
@@ -196,13 +197,20 @@ def _session_summary(report: dict[str, Any]) -> dict[str, Any]:
     if report.get("frames", 0) > 0 and not report.get("dry_run_outputs"):
         next_steps.append("inspect_detector_or_arbiter_chain")
 
+    checks = _validation_checks(report)
     return {
         "status": "ready_for_live_review" if not next_steps else "needs_more_samples",
         "observed_events": sorted((report.get("events") or {}).keys()),
+        "observed_event_labels": [display_event_key(key) for key in sorted((report.get("events") or {}).keys())],
         "chosen_events": sorted((report.get("chosen") or {}).keys()),
+        "chosen_event_labels": [display_event_key(key) for key in sorted((report.get("chosen") or {}).keys())],
         "observed_outputs": sorted((report.get("dry_run_outputs") or {}).keys()),
-        "validation_checks": _validation_checks(report),
+        "observed_output_labels": [
+            display_event_key(key) for key in sorted((report.get("dry_run_outputs") or {}).keys())
+        ],
+        "validation_checks": checks,
         "next_steps": _dedupe(next_steps),
+        "live_test_plan": _live_test_plan(checks),
     }
 
 
@@ -236,12 +244,19 @@ def _validation_checks(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
         ownership_missing.append("manual_identity")
 
     free_text_observed: list[str] = []
+    free_text_missing: list[str] = []
     if coverage.get("combat_feed_items", 0) > 0:
         free_text_observed.append("combat_feed")
+    else:
+        free_text_missing.append("combat_feed")
     if notice_codes:
         free_text_observed.append("hud_notices")
+    else:
+        free_text_missing.append("hud_notices")
     if coverage.get("awards_items", 0) > 0:
         free_text_observed.append("awards")
+    else:
+        free_text_missing.append("awards")
 
     profile_missing: list[str] = []
     if notice_codes and notice_codes.get("oil_overheat", 0) == 0:
@@ -261,8 +276,9 @@ def _validation_checks(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "missing": ownership_missing,
         },
         "free_text_safety": {
-            "status": "dry_run_only" if free_text_observed else "needs_more_samples",
+            "status": "dry_run_only" if free_text_observed and not free_text_missing else "needs_more_samples",
             "observed": sorted(free_text_observed),
+            "missing": sorted(free_text_missing),
             "real_output_blocked": True,
         },
         "replay_degrade": {
@@ -274,6 +290,49 @@ def _validation_checks(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "missing": profile_missing,
         },
     }
+
+
+def _live_test_plan(checks: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    plan: list[dict[str, Any]] = []
+
+    def add(area: str, label: str, status: str, priority: str, action: str) -> None:
+        plan.append({"area": area, "label": label, "status": status, "priority": priority, "action": action})
+
+    replay = checks.get("replay_degrade") or {}
+    if replay.get("status") == "needs_more_samples":
+        add("replay_degrade", "回放降级", "needs_more_samples", "P1", "capture_replay_true_sample")
+
+    free_text = checks.get("free_text_safety") or {}
+    if free_text.get("status") == "dry_run_only":
+        add("free_text_safety", "自由文本安全", "dry_run_only", "P1", "run_free_text_dry_run_safety_check")
+    elif free_text.get("status") == "needs_more_samples":
+        add("free_text_safety", "自由文本安全", "needs_more_samples", "P1", "capture_awards_or_free_text_sample")
+
+    ownership = checks.get("ownership") or {}
+    ownership_missing = set(ownership.get("missing") or [])
+    if ownership.get("status") == "needs_more_samples":
+        action = "capture_owned_kill_or_death"
+        if "ownership_fields" in ownership_missing:
+            action = "use_v16_combat_feed_ownership_fields"
+        elif "manual_identity" in ownership_missing:
+            action = "set_manual_identity_before_capture"
+        add("ownership", "击杀/死亡归属", "needs_more_samples", "P1", action)
+
+    numeric = checks.get("numeric_safety") or {}
+    if numeric.get("status") == "needs_more_samples":
+        add("numeric_safety", "数值安全事件", "needs_more_samples", "P2", "trigger_overspeed_critical")
+
+    profile = checks.get("profile_calibration") or {}
+    profile_missing = set(profile.get("missing") or [])
+    if profile.get("status") == "needs_more_samples":
+        action = "capture_oil_overheat_notice"
+        if "powertrain_failure" in profile_missing and "oil_overheat" not in profile_missing:
+            action = "wait_for_powertrain_profile_or_sample"
+        elif "hud_notice_severity" in profile_missing and "oil_overheat" not in profile_missing:
+            action = "verify_hud_notice_severity_mapping"
+        add("profile_calibration", "油温/动力故障校准", "needs_more_samples", "P2", action)
+
+    return plan
 
 
 def _next_steps_for_gaps(gaps: list[str]) -> list[str]:
@@ -415,6 +474,7 @@ def _fmt_session_summary(summary: dict[str, Any]) -> str:
             f"observed_outputs={_fmt_list(list(summary.get('observed_outputs') or []))}",
             f"validation_checks={_fmt_validation_checks(summary.get('validation_checks') or {})}",
             f"next_steps={_fmt_list(list(summary.get('next_steps') or []))}",
+            f"live_test_plan={_fmt_live_test_plan(list(summary.get('live_test_plan') or []))}",
         ]
     )
 
@@ -430,6 +490,16 @@ def _fmt_validation_checks(checks: dict[str, Any]) -> str:
         suffix = f"({_fmt_list(list(detail))})" if detail else ""
         parts.append(f"{key}:{value.get('status') or 'unknown'}{suffix}")
     return "; ".join(parts) if parts else "-"
+
+
+def _fmt_live_test_plan(plan: list[dict[str, Any]]) -> str:
+    if not plan:
+        return "-"
+    return "; ".join(
+        f"{item.get('priority')}:{item.get('label')}:{item.get('status')}->{item.get('action')}"
+        for item in plan
+        if isinstance(item, dict)
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
