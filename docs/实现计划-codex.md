@@ -13,6 +13,7 @@
 - T-Safety output text sanitizer 已完成。
 - T-Observe runtime decision timeline 已完成轻量实现：普通模式只保留最近摘要，debug 模式使用内存 ring buffer。
 - 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `102/102 passed` 为准。
+- 离线 readiness 工具链已补齐：`tools/sample_replay.py` 负责样本覆盖率与 `session_summary`，`tools/offline_report.py` 负责安全 Markdown / JSON 汇报，`tools/live_test_plan.py` 负责把 P1/P2 待测项展开为下一轮真机“操作 / 监控 / 通过 / 失败 / 数据层缺口”清单。
 - 数据层 `v1.6` 已合并，包含：
   - `overspeed_warn` / `overspeed_critical`
   - enhanced `combat.feed`
@@ -103,7 +104,7 @@
 
 ## 推进顺序
 
-1. M3 剩余验证：replay 样本验证、awards/free-text dry_run 验证、failure 字段策略。
+1. M3 剩余验证：先运行 `tools/live_test_plan.py local_samples/data_process_20260620 tl0sr2` 生成下一轮真机操作清单，再按清单补 replay 样本验证、awards/free-text dry_run 验证、failure 字段策略。
 2. 真机 checklist 验证 v1.6 接缝，同时用 T-Observe 辅助解释决策链路。
 3. 如 T-Observe 在真机里信息不足，再补 debug timeline 展示/字段。
 4. kill/death/hudmsg/combat.feed/awards 去桩前复核 T-Safety prompt 合同。
