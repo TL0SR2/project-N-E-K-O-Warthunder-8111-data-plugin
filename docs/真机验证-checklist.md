@@ -1,6 +1,6 @@
 # 真机验证 checklist
 
-> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、T-Observe runtime decision timeline、T-Live live monitor summary tool、identity Hosted UI/action 接缝已完成；逻辑自检以 `105/105 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
+> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、T-Observe runtime decision timeline、T-Live live monitor summary tool、identity Hosted UI/action 接缝已完成；逻辑自检以 `107/107 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
 
 ## 已完成的 Hosted UI Smoke
 
@@ -54,7 +54,7 @@
 
 待复核：
 
-- replay 降级：插件侧离线合同已覆盖 Detector 静默与 `detector_suppressed/replay` 观测记录；仍需真实 `replay=true` 样本验证。
+- replay 降级：插件侧离线合同已覆盖 Detector 静默、`detector_suppressed/replay` 观测记录和 `live_monitor` 的 `replay_degrade` 汇总；仍需真实 `replay=true` 样本验证。
 - 油温/发动机细项：过热基础链路已过；油温 / 发动机温度数据库和 `powertrain_failure` 策略仍后置，`powertrain_failure` 暂不直接播报。
 
 ## 下一轮统一测试现场顺序
@@ -70,7 +70,7 @@
 5. **identity / owned combat 回归**：在 Hosted UI 设置游戏昵称，确认 `/api/identity` 与 `/api/telemetry.combat.self.source=manual`；击杀 / 死亡时确认 `is_my_kill=true` / `is_my_death=true` 仍能生成 `you_killed` / `you_died`，并由 T-Observe 解释 Arbiter / Dispatcher 输出。
 6. **数值安全事件**：优先复测 `overheat` / `oil_overheat`、`overspeed_critical`、`stall_risk`、`low_alt_danger`、`low_fuel`；每次看 `observe.last_decision` 是否能解释 allow / drop / cooldown / scenario gate。
 7. **自由文本风险路径**：只在 `dry_run=true` 下观察 `combat.feed` / `hud_notices` / `awards`，确认 prompt / dry_run 输出不包含 raw 玩家名、raw HUD 文本或 awards 原文。
-8. **replay 降级**：若数据层返回 `replay=true`，确认 Detector 静默、last decision 能说明 suppressed / replay，不触发真实输出。
+8. **replay 降级**：若数据层返回 `replay=true`，确认 Detector 静默、last decision 能说明 suppressed / replay，`live_monitor` 显示 `replay=suppressed(detector_suppressed/replay)` 且 `output_blocked=True`，不触发真实输出。
 9. **样本留存**：把现场抓包放到 `local_samples/` 或本地临时目录，保持 `.gitignore`；仓库只提交聚合统计和脱敏结论。
 10. **真实开口**：只有前面 dry_run 通过后，才关闭 dry_run；`test_say`、generic kill/death 已在 2026-06-23 通过真实 push smoke。hudmsg / awards / 其他 free-text 仍需各自 dry_run 安全验证后再开放真实播报。
 
@@ -107,7 +107,7 @@
    uv run pytest -c tests\pytest.ini tests -q
    ```
 
-   预期：`105/105 passed`。
+   预期：`107/107 passed`。
 
 3. 启动宿主后启动插件，确认 `status` / Hosted UI context 可返回状态。
 
@@ -178,6 +178,7 @@
 5. replay seam：
 
    - 若 `/api/telemetry` 返回 `replay: true`，插件应进入降级或静默策略。
+   - `tools/live_monitor.py` 应显示 `replay=suppressed(detector_suppressed/replay)`，并在 JSON 中给出 `telemetry.replay_degrade.output_blocked=true`。
    - 回放期间不要消费派生战斗数据，不要触发真实播报。
 
 失败定位：

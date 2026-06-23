@@ -79,11 +79,14 @@ def monitor_once(
     context_raw = _dict(fetch(ENDPOINTS["context"]))
     telemetry_raw = _dict(fetch(ENDPOINTS["telemetry"]))
     logs = _summarize_logs(read_logs(log_paths))
+    context = _summarize_context(context_raw)
+    telemetry = _summarize_telemetry(telemetry_raw)
+    telemetry["replay_degrade"] = _summarize_replay_degrade(telemetry, context)
 
     report = {
         "health": health,
-        "context": _summarize_context(context_raw),
-        "telemetry": _summarize_telemetry(telemetry_raw),
+        "context": context,
+        "telemetry": telemetry,
         "logs": logs,
     }
     report["verdict"] = _build_verdict(report)
@@ -101,6 +104,7 @@ def render_text_report(report: dict[str, Any]) -> str:
     output = observe.get("last_output_status") if isinstance(observe.get("last_output_status"), dict) else {}
     combat = telemetry.get("combat") if isinstance(telemetry.get("combat"), dict) else {}
     free_text = telemetry.get("free_text_safety") if isinstance(telemetry.get("free_text_safety"), dict) else {}
+    replay_degrade = telemetry.get("replay_degrade") if isinstance(telemetry.get("replay_degrade"), dict) else {}
 
     health_line = ", ".join(
         [
@@ -134,6 +138,13 @@ def render_text_report(report: dict[str, Any]) -> str:
             sources=", ".join(free_text.get("observed_sources") or []) or "-",
             raw_fields=free_text.get("raw_text_fields_present", False),
             prompt_allowed=free_text.get("prompt_allowed", False),
+        ),
+        "Replay: replay={status}({stage}/{reason}), output_blocked={output_blocked}, prompt_allowed={prompt_allowed}".format(
+            status=replay_degrade.get("status") or "clear",
+            stage=replay_degrade.get("decision_stage") or "-",
+            reason=replay_degrade.get("decision_reason") or "-",
+            output_blocked=replay_degrade.get("output_blocked", False),
+            prompt_allowed=replay_degrade.get("prompt_allowed", True),
         ),
         "Observe: event={event}, decision={stage}/{outcome}/{reason}, output={out_stage}/{outcome2}/{reason2}".format(
             event=_safe_get(observe.get("last_event"), "event_id") or "-",
@@ -273,6 +284,40 @@ def _summarize_free_text_safety(
         "status": "dry_run_only",
         "observed_sources": sources,
         "raw_text_fields_present": raw_text_fields,
+        "prompt_allowed": False,
+    }
+
+
+def _summarize_replay_degrade(telemetry: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    observe = context.get("observe") if isinstance(context.get("observe"), dict) else {}
+    decision = observe.get("last_decision") if isinstance(observe.get("last_decision"), dict) else {}
+    output = observe.get("last_output_status") if isinstance(observe.get("last_output_status"), dict) else {}
+    telemetry_replay = telemetry.get("replay") is True
+    decision_stage = decision.get("stage")
+    decision_outcome = decision.get("outcome")
+    decision_reason = decision.get("reason")
+    output_blocked = not bool(output)
+    if not telemetry_replay:
+        return {
+            "status": "clear",
+            "telemetry_replay": bool(telemetry.get("replay")),
+            "decision_stage": decision_stage,
+            "decision_reason": decision_reason,
+            "output_blocked": True,
+            "prompt_allowed": True,
+        }
+    suppressed = (
+        decision_stage == "detector_suppressed"
+        and decision_outcome == "suppressed"
+        and decision_reason == "replay"
+        and output_blocked
+    )
+    return {
+        "status": "suppressed" if suppressed else "needs_attention",
+        "telemetry_replay": True,
+        "decision_stage": decision_stage,
+        "decision_reason": decision_reason,
+        "output_blocked": output_blocked,
         "prompt_allowed": False,
     }
 
