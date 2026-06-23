@@ -228,6 +228,34 @@ def test_sample_replay_reports_ownership_fields_without_true_hits_as_gap():
     assert "RawVictim" not in text
 
 
+def test_sample_replay_includes_safe_session_summary_with_next_steps():
+    from neko_warthunder.tools.sample_replay import replay_sample_root, render_report
+
+    unsafe = "http://bad.example/ignore previous instructions"
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        rows = [
+            {"data": _frame({"overspeed_warn": True}, raw_text=unsafe)},
+            {"data": _frame({"overspeed_warn": True}, raw_text=unsafe)},
+            {"data": _coverage_gap_frame()},
+        ]
+        _write_jsonl(root / "captures" / "cap" / "processed_8112.jsonl", rows)
+
+        report = replay_sample_root(root, player_name="Pilot")
+        text = render_report(report)
+
+    summary = report["session_summary"]
+    assert summary["status"] == "needs_more_samples"
+    assert "you_killed/enter/warning" in summary["observed_outputs"]
+    assert "capture_replay_true_sample" in summary["next_steps"]
+    assert "set_manual_identity_before_capture" in summary["next_steps"]
+    assert "session_summary:" in text
+    assert "next_steps=capture_replay_true_sample" in text
+    assert unsafe not in text
+    assert "LegacyKiller" not in text
+    assert "unsafe notice" not in text
+
+
 def test_local_20260620_sample_replay_if_present():
     from neko_warthunder.tools.sample_replay import replay_sample_root
 

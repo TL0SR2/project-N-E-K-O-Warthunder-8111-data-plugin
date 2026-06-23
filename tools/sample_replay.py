@@ -183,7 +183,51 @@ def _plain_report(report: dict[str, Any]) -> dict[str, Any]:
         plain[key] = dict(report[key])
     plain["coverage"] = _plain_value(report["coverage"])
     plain["coverage_gaps"] = _coverage_gaps(plain)
+    plain["session_summary"] = _session_summary(plain)
     return plain
+
+
+def _session_summary(report: dict[str, Any]) -> dict[str, Any]:
+    gaps = list(report.get("coverage_gaps") or [])
+    next_steps = _next_steps_for_gaps(gaps)
+    if report.get("files", 0) == 0:
+        next_steps.insert(0, "add_sample_capture")
+    if report.get("frames", 0) > 0 and not report.get("dry_run_outputs"):
+        next_steps.append("inspect_detector_or_arbiter_chain")
+
+    return {
+        "status": "ready_for_live_review" if not next_steps else "needs_more_samples",
+        "observed_events": sorted((report.get("events") or {}).keys()),
+        "chosen_events": sorted((report.get("chosen") or {}).keys()),
+        "observed_outputs": sorted((report.get("dry_run_outputs") or {}).keys()),
+        "next_steps": _dedupe(next_steps),
+    }
+
+
+def _next_steps_for_gaps(gaps: list[str]) -> list[str]:
+    mapping = {
+        "no_replay_true_frames": "capture_replay_true_sample",
+        "no_overspeed_critical_flags": "trigger_overspeed_critical",
+        "combat_feed_missing_ownership_fields": "use_v16_combat_feed_ownership_fields",
+        "combat_feed_no_ownership_true_frames": "capture_owned_kill_or_death",
+        "no_manual_identity_frames": "set_manual_identity_before_capture",
+        "no_awards_items": "capture_awards_or_free_text_sample",
+        "no_oil_overheat_notice_codes": "capture_oil_overheat_notice",
+        "no_powertrain_failure_notice_codes": "wait_for_powertrain_profile_or_sample",
+        "hud_notice_severity_unknown": "verify_hud_notice_severity_mapping",
+    }
+    return [mapping[gap] for gap in gaps if gap in mapping]
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
 
 
 def _coverage_gaps(report: dict[str, Any]) -> list[str]:
@@ -248,6 +292,7 @@ def render_report(report: dict[str, Any]) -> str:
         f"dry_run_outputs: {_fmt_counts(report['dry_run_outputs'])}",
         f"coverage: {_fmt_coverage(report.get('coverage') or {})}",
         f"coverage_gaps: {_fmt_list(report.get('coverage_gaps') or [])}",
+        f"session_summary: {_fmt_session_summary(report.get('session_summary') or {})}",
     ]
     return "\n".join(lines)
 
@@ -285,6 +330,20 @@ def _fmt_list(values: list[str]) -> str:
     if not values:
         return "-"
     return ", ".join(values)
+
+
+def _fmt_session_summary(summary: dict[str, Any]) -> str:
+    if not summary:
+        return "-"
+    return ", ".join(
+        [
+            f"status={summary.get('status') or 'unknown'}",
+            f"observed_events={_fmt_list(list(summary.get('observed_events') or []))}",
+            f"chosen_events={_fmt_list(list(summary.get('chosen_events') or []))}",
+            f"observed_outputs={_fmt_list(list(summary.get('observed_outputs') or []))}",
+            f"next_steps={_fmt_list(list(summary.get('next_steps') or []))}",
+        ]
+    )
 
 
 def main(argv: list[str]) -> int:
