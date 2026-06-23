@@ -12,7 +12,7 @@
 - Hosted UI surface/context/action smoke 已通过。
 - T-Safety output text sanitizer 已完成。
 - T-Observe runtime decision timeline 已完成轻量实现：普通模式只保留最近摘要，debug 模式使用内存 ring buffer。
-- 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `83/83 passed` 为准。
+- 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `84/84 passed` 为准。
 - 数据层 `v1.6` 已合并，包含：
   - `overspeed_warn` / `overspeed_critical`
   - enhanced `combat.feed`
@@ -74,6 +74,7 @@
 - sanitizer 单测。
 - dispatcher prompt 测试。
 - `push_message.parts[].text` 不包含 unsafe raw 的合同测试。
+- hudmsg / combat.feed / awards 常见自由文本字段族即使内容看似普通，也默认 blocked，不进入 safe prompt payload。
 
 ## M3：适配数据层 v1.6 DTO
 
@@ -115,5 +116,5 @@
 - 不要把自由文本过滤塞进 Detector / Scenario / Arbiter。
 - 不要复活旧的 `vehicle_valid` 作为 `you_died` 主路径。
 - 不要把 recovery 作为 v1 当前任务；它只保留测试方案和 TODO。
-- 不要沿用旧的 pre-T-Safety / pre-identity 测试数量；当前逻辑自检应以 `83/83 passed` 为准。
+- 不要沿用旧的 pre-T-Safety / pre-identity 测试数量；当前逻辑自检应以 `84/84 passed` 为准。
 - 不要在父仓库 `N.E.K.O` 里提交这个独立插件仓库。
