@@ -64,6 +64,10 @@ def test_offline_report_renders_safe_markdown_with_verdicts():
     assert "- blocked:" in text
     assert "- next:" in text
     assert "## Next validation steps" in text
+    assert "## Operator quick checklist" in text
+    assert "| 用户操作 | 我方监控重点 | 通过标准 |" in text
+    assert "`dry_run=true`" in text
+    assert "free_text=dry_run_only" in text
     assert "`verify_output_backpressure`" in text
     assert "`verify_kill_coalescing`" in text
     assert "## Next live-test plan" in text
@@ -126,6 +130,10 @@ def test_offline_report_cli_can_print_compact_json_without_raw_text():
     assert payload["validation_checks"]["free_text_safety"]["status"] == "dry_run_only"
     assert "verify_output_backpressure" in payload["next_steps"]
     assert "verify_kill_coalescing" in payload["next_steps"]
+    assert "quick_checklist" in payload
+    assert payload["quick_checklist"][0]["user_action"]
+    assert payload["quick_checklist"][0]["monitor"]
+    assert payload["quick_checklist"][0]["pass"]
     assert payload["live_test_plan"][0]["label"] in {"自由文本安全", "油温/动力故障校准"}
     assert {item["action"] for item in payload["live_test_plan"]} >= {
         "verify_output_backpressure",

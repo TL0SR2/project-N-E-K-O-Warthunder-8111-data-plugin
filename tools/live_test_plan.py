@@ -109,8 +109,8 @@ _ACTION_DETAILS: dict[str, dict[str, str]] = {
 def build_compact_plan(root: str | pathlib.Path, *, player_name: str = "tl0sr2") -> dict[str, Any]:
     report = replay_sample_root(root, player_name=player_name)
     summary = report.get("session_summary") or {}
-    steps = [_step_from_item(item) for item in summary.get("live_test_plan") or [] if isinstance(item, dict)]
-    quick_checklist = _quick_checklist(steps)
+    steps = [build_step_from_item(item) for item in summary.get("live_test_plan") or [] if isinstance(item, dict)]
+    quick_checklist = build_quick_checklist(steps)
     return {
         "root": report.get("root"),
         "files": report.get("files"),
@@ -173,7 +173,7 @@ def build_markdown_plan(root: str | pathlib.Path, *, player_name: str = "tl0sr2"
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _step_from_item(item: dict[str, Any]) -> dict[str, Any]:
+def build_step_from_item(item: dict[str, Any]) -> dict[str, Any]:
     action = str(item.get("action") or "")
     detail = _ACTION_DETAILS.get(action, _fallback_detail(action))
     return {
@@ -190,7 +190,7 @@ def _step_from_item(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _quick_checklist(steps: list[dict[str, Any]]) -> list[dict[str, str]]:
+def build_quick_checklist(steps: list[dict[str, Any]]) -> list[dict[str, str]]:
     actions = {str(step.get("action") or "") for step in steps}
     checklist = [
         {
