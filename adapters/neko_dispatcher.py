@@ -50,6 +50,7 @@ def _fact_line(event: BattleEvent) -> str:
         ("mach", "M {:.2f}"),
         ("fuel_fraction", "余油 {:.0%}"),
         ("temp_c", "温度 {:.0f}℃"),
+        ("kill_count", "连杀 {}"),
         ("victim", "击落 {}"),
         ("cause", "{}"),
         ("result", "战果 {}"),
