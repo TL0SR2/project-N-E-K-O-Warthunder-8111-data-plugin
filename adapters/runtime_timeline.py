@@ -8,7 +8,14 @@ from threading import Lock
 from typing import Any
 
 
-_OUTPUT_STAGES = {"dispatcher_dry_run", "dispatcher_pushed", "dispatcher_failed", "tts_pending", "tts_failed"}
+_OUTPUT_STAGES = {
+    "dispatcher_dry_run",
+    "dispatcher_pushed",
+    "dispatcher_failed",
+    "dispatcher_suppressed",
+    "tts_pending",
+    "tts_failed",
+}
 
 
 def _now_iso() -> str:
