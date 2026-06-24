@@ -102,6 +102,9 @@ class NekoDispatcher:
                     level=event.level,
                     priority=event.priority,
                     dry_run=True,
+                    kind="event",
+                    ai_behavior="respond",
+                    pushed=False,
                     safe_summary=f"{event.event_id}/{event.edge}/{event.level}",
                 )
             return f"dry_run(event={event.event_id}/{event.edge}/{event.level}, prio={event.priority}, preempt={event.preempt_eligible})"
@@ -117,6 +120,9 @@ class NekoDispatcher:
                     level=event.level,
                     priority=event.priority,
                     dry_run=False,
+                    kind="event",
+                    ai_behavior="respond",
+                    pushed=False,
                     safe_summary=f"{event.event_id}/{event.edge}/{event.level}",
                 )
             return f"suppressed(event={event.event_id}/{event.edge}, reason=output_backpressure)"
@@ -141,6 +147,9 @@ class NekoDispatcher:
                     level=event.level,
                     priority=event.priority,
                     dry_run=False,
+                    kind="event",
+                    ai_behavior="respond",
+                    pushed=False,
                 )
             raise
         self._last_push_at = now
@@ -155,6 +164,9 @@ class NekoDispatcher:
                 level=event.level,
                 priority=event.priority,
                 dry_run=False,
+                kind="event",
+                ai_behavior="respond",
+                pushed=True,
                 safe_summary=f"{event.event_id}/{event.edge}/{event.level}",
             )
         return f"pushed(event={event.event_id}/{event.edge})"
@@ -178,6 +190,27 @@ class NekoDispatcher:
                 priority=0,
                 metadata={"plugin": "neko_warthunder", "kind": "context"},
             )
+            if self.timeline:
+                self.timeline.record_stage(
+                    stage="context_pushed",
+                    outcome="pushed",
+                    reason="push_message_accepted",
+                    kind="context",
+                    ai_behavior="read",
+                    pushed=True,
+                    dry_run=False,
+                    safe_summary="context/read",
+                )
         except Exception as exc:  # noqa: BLE001 — 上下文注入失败不致命
+            if self.timeline:
+                self.timeline.record_stage(
+                    stage="context_failed",
+                    outcome="failed",
+                    reason=type(exc).__name__,
+                    kind="context",
+                    ai_behavior="read",
+                    pushed=False,
+                    dry_run=False,
+                )
             if self.logger:
                 self.logger.warning(f"push_context failed: {type(exc).__name__}")

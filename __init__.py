@@ -299,8 +299,30 @@ class NekoWarthunderPlugin(NekoPluginBase):
     )
     async def test_say(self, text: str = "副驾驶测试：能听到我吗？", **_):
         if self.cfg.dry_run:
+            if getattr(self, "timeline", None):
+                self.timeline.record_stage(
+                    stage="test_say_blocked",
+                    outcome="blocked",
+                    reason="dry_run",
+                    kind="test_say",
+                    ai_behavior="respond",
+                    pushed=False,
+                    dry_run=True,
+                    safe_summary="test_say/dry_run",
+                )
             return Ok({"pushed": False, "blocked": "dry_run", "text": str(text)})
         if self.safety.stopped:
+            if getattr(self, "timeline", None):
+                self.timeline.record_stage(
+                    stage="test_say_blocked",
+                    outcome="blocked",
+                    reason=self.safety.status(),
+                    kind="test_say",
+                    ai_behavior="respond",
+                    pushed=False,
+                    dry_run=False,
+                    safe_summary=f"test_say/{self.safety.status()}",
+                )
             return Ok({"pushed": False, "blocked": self.safety.status(), "text": str(text)})
         try:
             self.push_message(
@@ -311,8 +333,29 @@ class NekoWarthunderPlugin(NekoPluginBase):
                 priority=5,
                 metadata={"plugin": "neko_warthunder", "kind": "test"},
             )
+            if getattr(self, "timeline", None):
+                self.timeline.record_stage(
+                    stage="test_say_pushed",
+                    outcome="pushed",
+                    reason="push_message_accepted",
+                    kind="test_say",
+                    ai_behavior="respond",
+                    pushed=True,
+                    dry_run=False,
+                    safe_summary="test_say/respond",
+                )
             return Ok({"pushed": True, "text": str(text)})
         except Exception as exc:  # noqa: BLE001
+            if getattr(self, "timeline", None):
+                self.timeline.record_stage(
+                    stage="test_say_failed",
+                    outcome="failed",
+                    reason=type(exc).__name__,
+                    kind="test_say",
+                    ai_behavior="respond",
+                    pushed=False,
+                    dry_run=False,
+                )
             return Err(SdkError(f"test_say push failed: {exc}"))
 
     @ui.action(id="set_identity", label="设置玩家名", tone="primary", group="runtime", order=50, refresh_context=True)

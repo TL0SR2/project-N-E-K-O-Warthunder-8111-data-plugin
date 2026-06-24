@@ -179,3 +179,19 @@ def test_test_say_is_blocked_by_manual_pause():
     assert result["pushed"] is False
     assert result["blocked"] == "paused"
     assert plugin.pushed_messages == []
+
+
+def test_test_say_push_is_audited_when_allowed():
+    plugin = _plugin_for_action_tests()
+    plugin.cfg.dry_run = False
+    plugin.timeline = RuntimeTimeline(observability_enabled=True, max_events=10)
+
+    result = asyncio.run(plugin.test_say("hello"))
+
+    status = plugin.timeline.snapshot()["last_output_status"]
+    assert result["pushed"] is True
+    assert plugin.pushed_messages
+    assert status["stage"] == "test_say_pushed"
+    assert status["kind"] == "test_say"
+    assert status["ai_behavior"] == "respond"
+    assert status["pushed"] is True

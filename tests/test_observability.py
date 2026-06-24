@@ -191,6 +191,35 @@ def test_dispatcher_records_dry_run_output_status_without_prompt_text():
     assert UNSAFE_RAW not in repr(snapshot)
 
 
+def test_dispatcher_output_status_marks_event_kind_and_respond_behavior():
+    RuntimeTimeline = _timeline_api()
+    timeline = RuntimeTimeline(observability_enabled=True, max_events=10)
+    event = BattleEvent("you_killed")
+    plugin = FakePlugin()
+
+    result = NekoDispatcher(plugin, timeline=timeline).push_event(event, dry_run=False)
+
+    status = timeline.snapshot()["last_output_status"]
+    assert result == "pushed(event=you_killed/enter)"
+    assert status["kind"] == "event"
+    assert status["ai_behavior"] == "respond"
+    assert status["pushed"] is True
+
+
+def test_dispatcher_output_status_marks_context_read_behavior():
+    RuntimeTimeline = _timeline_api()
+    timeline = RuntimeTimeline(observability_enabled=True, max_events=10)
+    plugin = FakePlugin()
+
+    NekoDispatcher(plugin, timeline=timeline).push_context("context only")
+
+    status = timeline.snapshot()["last_output_status"]
+    assert status["stage"] == "context_pushed"
+    assert status["kind"] == "context"
+    assert status["ai_behavior"] == "read"
+    assert status["pushed"] is True
+
+
 def test_dispatcher_records_push_failure_before_reraising():
     RuntimeTimeline = _timeline_api()
     timeline = RuntimeTimeline(observability_enabled=True, max_events=10)
