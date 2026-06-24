@@ -41,6 +41,25 @@ def test_death_event_unsafe_killer_or_cause_does_not_enter_prompt():
     assert prompt
 
 
+def test_ground_death_prompt_does_not_say_air_death_wording():
+    prompt = NekoDispatcher(None).build_prompt(BattleEvent("you_died", payload={"domain": "ground", "cause": "destroyed"}))
+
+    assert "被摧毁" in prompt
+    assert "被击落" not in prompt
+
+
+def test_crash_death_prompt_uses_crash_wording():
+    prompt = NekoDispatcher(None).build_prompt(BattleEvent("you_died", payload={"domain": "air", "cause": "crashed"}))
+
+    assert "坠毁" in prompt
+
+
+def test_air_death_prompt_keeps_shot_down_wording():
+    prompt = NekoDispatcher(None).build_prompt(BattleEvent("you_died", payload={"domain": "air", "cause": "shot_down"}))
+
+    assert "被击落" in prompt
+
+
 def test_hudmsg_combat_feed_and_awards_raw_text_do_not_enter_prompt():
     prompt = NekoDispatcher(None).build_prompt(
         BattleEvent(
@@ -73,3 +92,27 @@ def test_push_message_parts_text_excludes_unsafe_raw_name():
     assert call["parts"][0]["type"] == "text"
     assert UNSAFE_NAME not in call["parts"][0]["text"]
     assert "{MASTER_NAME}" in call["parts"][0]["text"]
+
+
+def test_ground_kill_prompt_does_not_say_air_kill_wording():
+    prompt = NekoDispatcher(None).build_prompt(
+        BattleEvent("you_killed", payload={"domain": "ground", "victim": "enemy", "victim_vehicle": "tank"})
+    )
+
+    assert "击毁" in prompt
+    assert "击落" not in prompt
+
+
+def test_kill_prompt_uses_generic_target_instead_of_plain_victim_name():
+    prompt = NekoDispatcher(None).build_prompt(
+        BattleEvent("you_killed", payload={"domain": "ground", "victim": "PlainPlayerName"})
+    )
+
+    assert "PlainPlayerName" not in prompt
+    assert "敌方" in prompt
+
+
+def test_air_kill_prompt_keeps_air_kill_wording():
+    prompt = NekoDispatcher(None).build_prompt(BattleEvent("you_killed", payload={"domain": "air", "victim": "enemy"}))
+
+    assert "击落" in prompt

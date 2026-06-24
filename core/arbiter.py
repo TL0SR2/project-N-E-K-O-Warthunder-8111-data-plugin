@@ -143,6 +143,8 @@ class Arbiter:
             payload["victim"] = event.payload.get("victim")
         if event.payload.get("victim_vehicle") is not None:
             payload["victim_vehicle"] = event.payload.get("victim_vehicle")
+        if event.payload.get("domain") is not None:
+            payload["domain"] = event.payload.get("domain")
         self._kill_window = BattleEvent(
             self._kill_window.event_id,
             edge=self._kill_window.edge,

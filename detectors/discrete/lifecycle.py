@@ -87,6 +87,7 @@ class DeathDetector(DiscreteDetector):
                 "killer_name": newest.get("killer"),
                 "killer_vehicle": newest.get("killer_vehicle"),
                 "cause": newest.get("action") or "unknown",
+                "domain": cur.domain,
             },
             ts=cur.timestamp or 0.0,
             level="critical",
@@ -146,7 +147,11 @@ class KillDetector(DiscreteDetector):
             return None
         return BattleEvent(
             "you_killed",
-            payload={"victim": newest.get("victim"), "victim_vehicle": newest.get("victim_vehicle")},
+            payload={
+                "victim": newest.get("victim"),
+                "victim_vehicle": newest.get("victim_vehicle"),
+                "domain": cur.domain,
+            },
             ts=cur.timestamp or 0.0,
             level="warning",
         )

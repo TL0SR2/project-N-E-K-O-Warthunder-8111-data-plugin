@@ -143,6 +143,16 @@ def test_kill_detector_uses_is_my_kill_flag():
     assert ev.payload.get("victim") == "Target"
 
 
+def test_kill_detector_carries_domain_for_output_wording():
+    det = KillDetector("Me")
+    feed = {"feed": [{"id": 12, "is_my_kill": True, "victim": "Target", "victim_vehicle": "Tank"}]}
+    cur = C.BattleState(in_battle=True, vehicle_valid=True, domain="ground", combat=feed)
+
+    ev = det.feed(C.BattleState(), cur)
+
+    assert ev is not None and ev.payload.get("domain") == "ground"
+
+
 def test_death_detector_uses_is_my_death_flag():
     det = DeathDetector()
     feed = {
@@ -163,6 +173,16 @@ def test_death_detector_uses_is_my_death_flag():
     assert ev is not None and ev.event_id == "you_died"
     assert ev.payload.get("killer_name") == "Opponent"
     assert ev.payload.get("cause") == "shot_down"
+
+
+def test_death_detector_carries_domain_for_output_wording():
+    det = DeathDetector()
+    feed = {"feed": [{"id": 22, "is_my_death": True, "killer": "Opponent", "action": "destroyed"}]}
+    cur = C.BattleState(in_battle=True, vehicle_valid=False, domain="ground", combat=feed)
+
+    ev = det.feed(C.BattleState(in_battle=True, vehicle_valid=True), cur)
+
+    assert ev is not None and ev.payload.get("domain") == "ground"
 
 
 def test_vehicle_valid_drop_is_not_death_signal():

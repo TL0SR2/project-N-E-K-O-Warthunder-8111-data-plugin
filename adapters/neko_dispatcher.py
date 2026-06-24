@@ -23,7 +23,7 @@ _INTENT: dict[str, str] = {
     "overheat": "发动机过热，建议 {MASTER_NAME} 收油门散热",
     "low_fuel": "油不多了，提醒 {MASTER_NAME} 留意返航/续航",
     "you_killed": "为 {MASTER_NAME} 刚才的击杀庆祝/调侃一句",
-    "you_died": "{MASTER_NAME} 被击落了，简短共情安慰一句",
+    "you_died": "{MASTER_NAME} 刚才阵亡/载具损失了，按事实简短共情安慰一句",
     "spawn": "出场跟 {MASTER_NAME} 打个招呼、就位",
     "battle_end": "这局结束了，给 {MASTER_NAME} 收个尾/小结一句",
 }
@@ -42,6 +42,8 @@ def _output_backpressure_seconds(plugin: Any) -> float:
 def _fact_line(event: BattleEvent) -> str:
     p, _ = sanitize_event_payload(event.event_id, event.payload)
     bits: list[str] = []
+    kill_fact = _kill_fact(event.event_id, p)
+    death_fact = _death_fact(event.event_id, p)
     order = [
         ("ias_kmh", "IAS {:.0f}km/h"),
         ("aoa_deg", "迎角 {:.0f}°"),
@@ -51,10 +53,12 @@ def _fact_line(event: BattleEvent) -> str:
         ("fuel_fraction", "余油 {:.0%}"),
         ("temp_c", "温度 {:.0f}℃"),
         ("kill_count", "连杀 {}"),
-        ("victim", "击落 {}"),
-        ("cause", "{}"),
         ("result", "战果 {}"),
     ]
+    if kill_fact:
+        bits.append(kill_fact)
+    if death_fact:
+        bits.append(death_fact)
     for key, fmt in order:
         if key in p and p[key] is not None:
             try:
@@ -62,6 +66,37 @@ def _fact_line(event: BattleEvent) -> str:
             except (ValueError, TypeError):
                 pass
     return "、".join(bits)
+
+
+def _kill_fact(event_id: str, payload: dict[str, Any]) -> str:
+    if event_id != "you_killed":
+        return ""
+    domain = str(payload.get("domain") or "").lower()
+    if domain in {"air", "heli"}:
+        return "击落敌方空中目标"
+    if domain == "ground":
+        return "击毁敌方地面目标"
+    if domain == "naval":
+        return "击毁敌方舰艇"
+    return "击毁敌方目标"
+
+
+def _death_fact(event_id: str, payload: dict[str, Any]) -> str:
+    if event_id != "you_died":
+        return ""
+    cause = str(payload.get("cause") or "").lower()
+    domain = str(payload.get("domain") or "").lower()
+    if cause == "crashed":
+        return "己方载具坠毁"
+    if cause in {"destroyed", "wrecked"}:
+        if domain == "naval":
+            return "己方舰艇被摧毁"
+        return "己方载具被摧毁"
+    if cause == "shot_down":
+        if domain in {"air", "heli"}:
+            return "己方空中载具被击落"
+        return "己方载具被击毁"
+    return "己方载具损失"
 
 
 class NekoDispatcher:

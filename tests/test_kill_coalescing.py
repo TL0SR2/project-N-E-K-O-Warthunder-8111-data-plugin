@@ -72,3 +72,14 @@ def test_dispatcher_prompt_uses_generic_multikill_summary_without_raw_names():
     assert "3" in prompt
     assert UNSAFE_NAME not in prompt
     assert "{MASTER_NAME}" in prompt
+
+
+def test_kill_coalescing_preserves_latest_domain_for_output_wording():
+    arb = _arbiter()
+
+    arb.decide([BattleEvent("you_killed", payload={"victim": "A", "domain": "ground"}, ts=100.0)], IN_FLIGHT, 100.0)
+    arb.decide([BattleEvent("you_killed", payload={"victim": "B", "domain": "ground"}, ts=101.0)], IN_FLIGHT, 101.0)
+    chosen, _ = arb.decide([], IN_FLIGHT, 102.1)
+
+    assert chosen is not None
+    assert chosen.payload.get("domain") == "ground"
