@@ -332,6 +332,9 @@ def _live_test_plan(checks: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
             action = "verify_hud_notice_severity_mapping"
         add("profile_calibration", "油温/动力故障校准", "needs_more_samples", "P2", action)
 
+    add("runtime_output", "T-Output 真实开口背压", "needs_live_review", "P2", "verify_output_backpressure")
+    add("runtime_output", "T-Kill-Coalesce 多杀合并", "needs_live_review", "P2", "verify_kill_coalescing")
+
     return plan
 
 

@@ -105,29 +105,11 @@ _ACTION_DETAILS: dict[str, dict[str, str]] = {
     },
 }
 
-_RUNTIME_FOLLOWUP_STEPS: tuple[dict[str, str], ...] = (
-    {
-        "area": "runtime_output",
-        "label": "T-Output 真实开口背压",
-        "status": "needs_live_review",
-        "priority": "P2",
-        "action": "verify_output_backpressure",
-    },
-    {
-        "area": "runtime_output",
-        "label": "T-Kill-Coalesce 多杀合并",
-        "status": "needs_live_review",
-        "priority": "P2",
-        "action": "verify_kill_coalescing",
-    },
-)
-
 
 def build_compact_plan(root: str | pathlib.Path, *, player_name: str = "tl0sr2") -> dict[str, Any]:
     report = replay_sample_root(root, player_name=player_name)
     summary = report.get("session_summary") or {}
     steps = [_step_from_item(item) for item in summary.get("live_test_plan") or [] if isinstance(item, dict)]
-    _append_runtime_followups(steps)
     return {
         "root": report.get("root"),
         "files": report.get("files"),
@@ -191,14 +173,6 @@ def _step_from_item(item: dict[str, Any]) -> dict[str, Any]:
         "fail": detail["fail"],
         "data_gap": detail["data_gap"],
     }
-
-
-def _append_runtime_followups(steps: list[dict[str, Any]]) -> None:
-    seen = {str(step.get("action") or "") for step in steps}
-    for item in _RUNTIME_FOLLOWUP_STEPS:
-        if item["action"] not in seen:
-            steps.append(_step_from_item(dict(item)))
-            seen.add(item["action"])
 
 
 def _fallback_detail(action: str) -> dict[str, str]:

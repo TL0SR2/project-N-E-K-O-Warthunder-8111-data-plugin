@@ -309,8 +309,24 @@ def test_sample_replay_session_summary_includes_prioritized_live_test_plan():
         "priority": "P2",
         "action": "capture_oil_overheat_notice",
     } in plan
+    assert {
+        "area": "runtime_output",
+        "label": "T-Output 真实开口背压",
+        "status": "needs_live_review",
+        "priority": "P2",
+        "action": "verify_output_backpressure",
+    } in plan
+    assert {
+        "area": "runtime_output",
+        "label": "T-Kill-Coalesce 多杀合并",
+        "status": "needs_live_review",
+        "priority": "P2",
+        "action": "verify_kill_coalescing",
+    } in plan
     assert "live_test_plan=" in text
     assert "回放降级" in text
+    assert "verify_output_backpressure" in text
+    assert "verify_kill_coalescing" in text
     assert "unsafe notice" not in text
 
 
