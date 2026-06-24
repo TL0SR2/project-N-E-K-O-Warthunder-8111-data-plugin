@@ -13,6 +13,11 @@ _OUTPUT_STAGES = {
     "dispatcher_pushed",
     "dispatcher_failed",
     "dispatcher_suppressed",
+    "context_pushed",
+    "context_failed",
+    "test_say_pushed",
+    "test_say_blocked",
+    "test_say_failed",
     "tts_pending",
     "tts_failed",
 }
@@ -127,6 +132,9 @@ class RuntimeTimeline:
                     "window": metadata.get("window"),
                     "safety_status": metadata.get("safety_status"),
                     "dispatcher_status": metadata.get("dispatcher_status"),
+                    "kind": metadata.get("kind"),
+                    "ai_behavior": metadata.get("ai_behavior"),
+                    "pushed": metadata.get("pushed"),
                     "message": safe_summary,
                 }
             )
@@ -145,6 +153,9 @@ class RuntimeTimeline:
                         "outcome": outcome,
                         "reason": reason,
                     }
+                    for key in ("kind", "ai_behavior", "pushed", "event_id", "edge", "level", "priority", "dry_run"):
+                        if record.get(key) is not None:
+                            self._last_output_status[key] = record.get(key)
                 if self.enabled:
                     self._records.append(record)
         except Exception:
