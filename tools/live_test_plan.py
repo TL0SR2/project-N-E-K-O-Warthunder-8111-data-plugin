@@ -89,13 +89,45 @@ _ACTION_DETAILS: dict[str, dict[str, str]] = {
         "fail": "severity 不稳定时继续使用保守默认档位。",
         "data_gap": "只有 unknown severity 时，继续补数据层映射。",
     },
+    "verify_output_backpressure": {
+        "operation": "dry_run=false 时连续触发同优先级或更低优先级事件，观察是否被输出背压压住。",
+        "monitor": "tools/live_monitor.py Summary、observe.last_output_status、output_backpressure、push_message 时延。",
+        "pass": "Summary 显示 output=dispatcher_suppressed/dropped(output_backpressure)，旧事件不再排队晚回，更高优先级事件仍能通过。",
+        "fail": "连续事件仍造成晚回、刷屏，或更高优先级事件被误压。",
+        "data_gap": "不依赖新 DTO；若现场事件不足，可用 test_say / generic kill-death smoke 补充。",
+    },
+    "verify_kill_coalescing": {
+        "operation": "dry_run=false 或 dry_run=true 下打出短窗多杀，优先用 owned combat.feed 或已验证的杀敌场景。",
+        "monitor": "tools/live_monitor.py Summary、observe.last_decision、kill_coalesced、kill_count、push_message 轮数。",
+        "pass": "Summary / Observe 保留 decision=arbiter_allowed/allowed/kill_coalesced，多杀合成单条 generic 输出，kill_count 可解释。",
+        "fail": "多杀连续刷屏、kill_count 丢失，或 you_died / critical 不能抢占。",
+        "data_gap": "如果现场没有 owned kill 样本，先保留下一轮真机用例。",
+    },
 }
+
+_RUNTIME_FOLLOWUP_STEPS: tuple[dict[str, str], ...] = (
+    {
+        "area": "runtime_output",
+        "label": "T-Output 真实开口背压",
+        "status": "needs_live_review",
+        "priority": "P2",
+        "action": "verify_output_backpressure",
+    },
+    {
+        "area": "runtime_output",
+        "label": "T-Kill-Coalesce 多杀合并",
+        "status": "needs_live_review",
+        "priority": "P2",
+        "action": "verify_kill_coalescing",
+    },
+)
 
 
 def build_compact_plan(root: str | pathlib.Path, *, player_name: str = "tl0sr2") -> dict[str, Any]:
     report = replay_sample_root(root, player_name=player_name)
     summary = report.get("session_summary") or {}
     steps = [_step_from_item(item) for item in summary.get("live_test_plan") or [] if isinstance(item, dict)]
+    _append_runtime_followups(steps)
     return {
         "root": report.get("root"),
         "files": report.get("files"),
@@ -159,6 +191,14 @@ def _step_from_item(item: dict[str, Any]) -> dict[str, Any]:
         "fail": detail["fail"],
         "data_gap": detail["data_gap"],
     }
+
+
+def _append_runtime_followups(steps: list[dict[str, Any]]) -> None:
+    seen = {str(step.get("action") or "") for step in steps}
+    for item in _RUNTIME_FOLLOWUP_STEPS:
+        if item["action"] not in seen:
+            steps.append(_step_from_item(dict(item)))
+            seen.add(item["action"])
 
 
 def _fallback_detail(action: str) -> dict[str, str]:
