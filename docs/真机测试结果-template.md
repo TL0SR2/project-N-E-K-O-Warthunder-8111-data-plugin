@@ -118,13 +118,14 @@
 
 ## T-Output / T-Kill-Coalesce 复测
 
-- `tools/live_test_plan.py` 是否列出 `verify_output_backpressure`：
-- `tools/live_test_plan.py` 是否列出 `verify_kill_coalescing`：
+- `sample_replay` / `offline_report` / `live_test_plan` / `session_summary.next_steps` 是否列出 `verify_output_backpressure`：
+- `sample_replay` / `offline_report` / `live_test_plan` / `session_summary.next_steps` 是否列出 `verify_kill_coalescing`：
 - 连续同/低优先级事件是否被背压压住：
 - 更高优先级事件是否仍可通过：
 - 短窗多杀是否合并成单条 `kill_count` 输出：
 - `you_died` / critical 是否仍可抢占待播击杀：
 - `tools/live_monitor.py` Summary 是否显示 `output_backpressure` / `kill_coalesced`：
+- 旧回复晚到 / 多条消息堆积是否比上一轮减少：
 
 ## coverage_gaps
 
