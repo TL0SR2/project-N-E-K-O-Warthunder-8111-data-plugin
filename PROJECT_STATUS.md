@@ -10,9 +10,11 @@
 - `T-Safety: output text sanitizer` is complete.
 - `T-Observe: runtime decision timeline` is implemented in lightweight form: always-on last summaries plus an opt-in in-memory debug ring buffer.
 - `T-Live: live monitor summary tool` is complete for safe, read-only runtime summaries during real-machine tests.
-- Logic self-check currently passes: `108/108`.
+- `T-Output: output backpressure guard` is complete for real `push_message` calls. It suppresses same-or-lower-priority real pushes during `output_backpressure_seconds` while allowing higher-priority events through.
+- Logic self-check currently passes: `111/111`.
 - Real-machine smoke passed on 2026-06-21 and 2026-06-23 for Hosted UI context/actions, safety pause/resume, spawn, overspeed warning/critical, low_fuel warning/critical, low-altitude warning/critical, stall warning/critical, overheat warning/critical, identity manual seam, owned kill/death ownership, you_killed / you_died Arbiter decisions, dry-run dispatcher output, and `dry_run=false` push output.
 - 2026-06-23: plugin status reporting was deduped and throttled to avoid host-side `report_status` / ZMQ backpressure spam while still reporting immediately on real state changes.
+- 2026-06-24 live `dry_run=false` testing showed the plugin can push events quickly while the host reply may arrive late and mix older event context. The first mitigation is plugin-side real-output backpressure; the next live test should verify it reduces stale queued replies without blocking critical interrupts.
 - Default runtime mode is `dry_run = true`; the plugin runs the decision chain but does not push real catgirl speech until dry run is disabled.
 - The plugin boundary is HTTP `:8112` (`/api/telemetry`) only. It consumes the vendored data layer and must not import or modify `data_layer/` code.
 - Vendored data layer contract `v1.6` is merged. It includes `overspeed_warn` / `overspeed_critical`, enhanced `combat.feed`, `is_my_kill` / `is_my_death`, `/api/identity`, `replay: true` degrade mode, `hud_notices`, and `awards`.
@@ -37,6 +39,7 @@
 - `replay: true` telemetry is silenced at `DetectorEngine`: detectors reset, no battle events are emitted, and T-Observe records `detector_suppressed/replay` as the latest decision. `tools/live_monitor.py` now reports `replay_degrade.status`, `decision_stage` / `decision_reason`, and whether output was blocked. Real replay samples still need validation.
 - `/api/identity` now has a plugin-side player-name seam through Hosted UI context/action and the minimal panel. 2026-06-23 real-machine testing verified the manual identity seam against `combat.self.source=manual`, observed owned `combat.feed[].is_my_kill` / `combat.feed[].is_my_death` paths in air/ground contexts, and confirmed post-fix `you_killed` plus `you_died` reach Arbiter and Dispatcher.
 - T-Observe exposes `observe.last_event`, `observe.last_decision`, `observe.last_output_status`, and debug-only `recent_timeline` through Hosted UI context. 2026-06-23 real-machine dry-run confirmed the always-on summaries explain allowed, preempted, cooldown-dropped, and dry-run dispatcher outcomes.
+- T-Output adds a final dispatcher-side guard before real `push_message`: same-or-lower-priority events inside `output_backpressure_seconds` are recorded as `dispatcher_suppressed / output_backpressure`; higher-priority events can still be pushed.
 - T-Safety is now in place at the NekoDispatcher / prompt-builder boundary. It blocks common hudmsg / combat.feed / awards free-text field families before prompt construction. Generic kill/death speech has passed real-machine `dry_run=false` smoke; hudmsg / awards / other free-text speech still needs real-machine dry-run validation before rollout.
 - Numeric flight-safety events such as stall, low altitude, overheat, overspeed, and low_fuel are not blocked by T-Safety. 2026-06-23 air dry-run observed low_fuel warning and critical output; later low_fuel repeats could be scenario-gated under combat stress as expected.
 - The 2026-06-23 live monitor exposed a data-layer map/profile polling regression where `wt_proximity` still called the old `_merge_profile()` signature. The code path is fixed with regression coverage; the next live data-layer restart should confirm the log no longer repeats.
@@ -63,7 +66,7 @@ uv run pytest -c tests\pytest.ini tests -q
 Notes:
 
 - `tools/preflight.py --run` also runs plugin check, synthetic replay, local sample replay, the offline readiness report, and the live test plan when the relevant local paths exist. Use `--report-output <path>` to save the Markdown report; parent directories are created automatically. The printed preflight plan points local sample replay users to `session_summary`, the Markdown / JSON report, and the live operation plan as review entries.
-- `tests/run_logic_tests.py` is the no-host logic self-check and should report `108/108 passed`.
+- `tests/run_logic_tests.py` is the no-host logic self-check and should report `111/111 passed`.
 - The standalone pytest entry uses `tests/pytest.ini` so pytest does not import the host SDK-dependent plugin entrypoint while collecting tests.
 - If an older handoff note still shows the pre-T4 test count, treat it as stale unless it explicitly refers to an older test entry point.
 - The real-machine checklist is in `docs/真机验证-checklist.md`; it now includes the 2026-06-21 dry-run smoke result, the next unified live-test order, and links to the 2026-06-20 offline sample replay report in `docs/样本回放-20260620.md`.
@@ -73,7 +76,7 @@ Notes:
 ## Next Recommended Work
 
 1. Continue M3 seams that still need real-machine validation or samples: replay real-sample validation with the `live_monitor` `Summary` / replay degrade status, awards/free-text dry_run validation with `free_text_safety.source_details` / `FreeText detail`, and the remaining failure-field strategy.
-2. Run the remaining real-machine/data-layer/dry_run seams from `docs/真机验证-checklist.md`, using T-Observe to inspect `last_decision` / `last_output_status` while focusing on replay, awards/free-text paths, and oil/engine failure details after the data-layer database/profile calibration.
+2. Run the remaining real-machine/data-layer/dry_run seams from `docs/真机验证-checklist.md`, using T-Observe to inspect `last_decision` / `last_output_status` while focusing on replay, awards/free-text paths, oil/engine failure details after the data-layer database/profile calibration, and whether T-Output reduces stale real replies.
 3. During live validation, capture a fresh real `/api/telemetry` response under ignored `local_samples/` for comparison with the sanitized `contract/telemetry_sample.json`, then summarize the result with `docs/真机测试结果-template.md`.
 4. Keep kill/death generic speech enabled only through T-Safety-safe prompts; consider hudmsg/combat.feed/awards speech only after their own dry-run safety checks pass.
 5. Keep T3/L8 data-layer subprocess orchestration for a later runtime pass.

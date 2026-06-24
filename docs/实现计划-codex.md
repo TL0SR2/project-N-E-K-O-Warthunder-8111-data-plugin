@@ -12,7 +12,7 @@
 - Hosted UI surface/context/action smoke 已通过。
 - T-Safety output text sanitizer 已完成。
 - T-Observe runtime decision timeline 已完成轻量实现：普通模式只保留最近摘要，debug 模式使用内存 ring buffer。
-- 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `108/108 passed` 为准。
+- 逻辑自检以 `uv run python tests/run_logic_tests.py` 的 `111/111 passed` 为准。
 - 离线 readiness 与真机监控工具链已补齐：`tools/sample_replay.py` 负责样本覆盖率与 `session_summary`，`tools/offline_report.py` 负责安全 Markdown / JSON 汇报，`tools/live_test_plan.py` 负责把 P1/P2 待测项展开为下一轮真机“操作 / 监控 / 通过 / 失败 / 数据层缺口”清单，`tools/live_monitor.py` 负责真机测试时安全汇总 health、context、telemetry ownership 计数、free-text dry_run-only 状态与逐源 blocked 摘要、replay 降级状态、T-Observe 摘要与日志异常计数。
 - 数据层 `v1.6` 已合并，包含：
   - `overspeed_warn` / `overspeed_critical`
@@ -45,6 +45,7 @@
 - L6 Dispatcher / instructions：完成基础输出；T-Safety 已在 prompt builder 前接入，prompt / `push_message.parts[].text` 不允许包含 unsafe raw。
 - L7 safety guard + Hosted UI：完成。
 - T-Observe runtime decision timeline：完成轻量实现；Hosted UI context 暴露 `observe.last_event` / `last_decision` / `last_output_status`，debug timeline 默认关闭。
+- T-Output output backpressure guard：完成轻量实现；真实 `push_message` 前会在 `output_backpressure_seconds` 窗口内压住同优先级或更低优先级事件，减少主机回复队列堆积，更高优先级事件仍可通过。
 - L8 数据层并入：vendored 数据层已合并；插件侧子进程编排未做。
 - L9 真机调参：未完成；T-Live 只读监控工具已完成，可用于下一轮真机统一测试归档。
 
@@ -117,5 +118,5 @@
 - 不要把自由文本过滤塞进 Detector / Scenario / Arbiter。
 - 不要复活旧的 `vehicle_valid` 作为 `you_died` 主路径。
 - 不要把 recovery 作为 v1 当前任务；它只保留测试方案和 TODO。
-- 不要沿用旧的 pre-T-Safety / pre-identity 测试数量；当前逻辑自检应以 `108/108 passed` 为准。
+- 不要沿用旧的 pre-T-Safety / pre-identity / pre-T-Output 测试数量；当前逻辑自检应以 `111/111 passed` 为准。
 - 不要在父仓库 `N.E.K.O` 里提交这个独立插件仓库。
