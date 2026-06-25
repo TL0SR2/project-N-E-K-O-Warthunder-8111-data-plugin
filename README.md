@@ -85,11 +85,10 @@ uv run python -m plugin.neko_plugin_cli.cli check D:\Users\zheng\Documents\Code\
 
 ## 运行时启动注意（独立插件仓库）
 
-本仓库是独立插件仓库；当前工作区里 `N.E.K.O\plugin\plugins\neko_warthunder` 是指向本仓库的 junction。手动启动宿主时，建议让外层工作区进入插件扫描根：
+本仓库是独立插件仓库；当前工作区里 `N.E.K.O\plugin\plugins\neko_warthunder` 必须是指向本仓库的 junction。手动启动宿主时，不要额外设置 `PLUGIN_CONFIG_ROOT` 指向外层工作区，否则宿主可能同时扫到 junction 和独立仓库目录，产生重复插件（例如 `neko_warthunder_1`）或加载旧副本。
 
 ```powershell
 cd D:\Users\zheng\Documents\Code\N-E-K-O-Warthunder\N.E.K.O
-$env:PLUGIN_CONFIG_ROOT = "D:\Users\zheng\Documents\Code\N-E-K-O-Warthunder"
 uv run python launcher.py
 ```
 
@@ -100,7 +99,7 @@ Invoke-RestMethod -Method Post http://127.0.0.1:48916/plugins/refresh
 Invoke-RestMethod -Method Post http://127.0.0.1:48916/plugin/neko_warthunder/start
 ```
 
-`plugins/refresh` 可能同时看到外层根下的独立仓库目录名；只要 junction 路径注册出的 `neko_warthunder` 可启动、Hosted UI context 返回 `state_empty=false` 且 actions 可见，即可继续真机测试。
+若 `plugins/refresh` 看到 `neko_warthunder_1`，或把 `project-N-E-K-O-Warthunder-8111-data-plugin` 当成另一份插件，先检查 junction 与启动环境，不要继续真机测试。运行态烟测通过的判据是：只启动 `neko_warthunder`，Hosted UI context 返回 `state_empty=false`，actions 可见，且 `dry_run=true` 时 `test_say` 返回 `pushed=false, blocked="dry_run"`。
 
 ## 目录
 

@@ -63,7 +63,8 @@
 
 1. **离线门禁**：按 `docs/统一测试前-离线检查.md` 跑完逻辑测试、pytest、plugin check、合成 replay、本地样本 replay。
 2. **启动链路**：启动 N.E.K.O 宿主、Hosted UI、数据层 `:8112`，确认三项 health 正常。
-   - 当前工作区通过 junction 挂载独立插件仓库；若宿主没有发现 `neko_warthunder`，用 `PLUGIN_CONFIG_ROOT=D:\Users\zheng\Documents\Code\N-E-K-O-Warthunder` 重启宿主，再调用 `/plugins/refresh` 与 `/plugin/neko_warthunder/start`。
+   - 当前工作区通过 junction 挂载独立插件仓库；手动启动宿主时不要设置 `PLUGIN_CONFIG_ROOT` 指向外层工作区，避免重复扫到独立仓库目录或加载旧副本。若宿主没有发现 `neko_warthunder`，先检查 `N.E.K.O\plugin\plugins\neko_warthunder` 是否仍是指向独立仓库的 junction，再调用 `/plugins/refresh` 与 `/plugin/neko_warthunder/start`。
+   - 若出现 `neko_warthunder_1`，或 `dry_run=true` 下 `test_say` 返回 `pushed=true`，说明运行副本没有对齐；先停止测试并修复运行路径。
    - Hosted UI 侧以 context `state_empty=false`、actions 包含 `set_dry_run` / `pause` / `resume` / `test_say` / `set_identity` 作为注册通过信号。
 3. **打开面板**：确认 `dry_run=true`，观察 `connected` / `conn_state` / `in_battle` / `scenario` / `safety` / `observe.last_decision` / `observe.last_output_status`。
 4. **基础 action**：依次点 `pause`、`resume`、`test_say`，确认没有 `PLUGIN_UI_ACTION_FAILED`；`pause` 时风险事件应被 suppress，`resume` 后恢复。
@@ -234,3 +235,4 @@
 
 - recovery 继续暂缓。不要因为数据层 v1.6 合并就提前实现。
 - L8 子进程最小编排已完成。下一轮真机前先验证：插件托管启动时 `data_layer.mode=managed` 且插件关闭会关掉该 8112；手动预先启动 8112 时 `data_layer.mode=external` 且插件关闭不会误杀。
+- 2026-06-25 已修正本地运行副本边界：`N.E.K.O\plugin\plugins\neko_warthunder` 改为指向独立插件仓库的 junction。复测确认宿主启动、`/plugins/refresh`、`/plugin/neko_warthunder/start`、Hosted UI context、`set_dry_run` / `pause` / `resume` / `test_say` 均可用；`dry_run=true` 下 `test_say` 正确返回 `pushed=false, blocked="dry_run"`。
