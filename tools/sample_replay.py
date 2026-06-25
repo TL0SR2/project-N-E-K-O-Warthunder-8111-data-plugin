@@ -102,7 +102,10 @@ def replay_sample_root(root: str | pathlib.Path, *, player_name: str = "") -> di
             "active_players_max": 0,
             "hud_notice_codes": Counter(),
             "hud_notice_severities": Counter(),
+            "hud_notice_raw_text_fields": 0,
             "awards_items": 0,
+            "awards_raw_text_fields": 0,
+            "combat_feed_raw_text_fields": 0,
         },
     }
 
@@ -144,6 +147,7 @@ def _record_coverage(coverage: dict[str, Any], payload: dict[str, Any]) -> None:
     combat = payload.get("combat") if isinstance(payload.get("combat"), dict) else {}
     feed = combat.get("feed") if isinstance(combat.get("feed"), list) else []
     coverage["combat_feed_items"] += len(feed)
+    coverage["combat_feed_raw_text_fields"] += _count_raw_text_items(feed)
     for item in feed:
         if not isinstance(item, dict):
             continue
@@ -169,6 +173,7 @@ def _record_coverage(coverage: dict[str, Any], payload: dict[str, Any]) -> None:
 
     notices = payload.get("hud_notices") if isinstance(payload.get("hud_notices"), dict) else {}
     notice_feed = notices.get("feed") if isinstance(notices.get("feed"), list) else []
+    coverage["hud_notice_raw_text_fields"] += _count_raw_text_items(notice_feed)
     for item in notice_feed:
         if isinstance(item, dict):
             coverage["hud_notice_codes"][str(item.get("code") or "unknown")] += 1
@@ -177,6 +182,37 @@ def _record_coverage(coverage: dict[str, Any], payload: dict[str, Any]) -> None:
     awards = payload.get("awards") if isinstance(payload.get("awards"), dict) else {}
     awards_feed = awards.get("feed") if isinstance(awards.get("feed"), list) else []
     coverage["awards_items"] += len(awards_feed)
+    coverage["awards_raw_text_fields"] += _count_raw_text_items(awards_feed)
+
+
+def _count_raw_text_items(items: list[Any]) -> int:
+    return sum(1 for item in items if isinstance(item, dict) and _has_raw_text_field(item))
+
+
+def _has_raw_text_field(item: dict[str, Any]) -> bool:
+    raw_keys = {
+        "text",
+        "raw",
+        "raw_text",
+        "message",
+        "hudmsg",
+        "hud_text",
+        "notice_text",
+        "feed_text",
+        "feed_raw",
+        "award_text",
+        "award_name",
+        "award_title",
+        "player_name",
+        "enemy_name",
+        "killer",
+        "killer_name",
+        "victim",
+        "victim_name",
+        "assist_name",
+        "squad_name",
+    }
+    return any(key in item and item.get(key) not in {None, ""} for key in raw_keys)
 
 
 def _plain_report(report: dict[str, Any]) -> dict[str, Any]:
@@ -259,6 +295,12 @@ def _validation_checks(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
         free_text_observed.append("awards")
     else:
         free_text_missing.append("awards")
+    free_text_source_details = _free_text_source_details(report)
+    free_text_blocked_reasons = [
+        f"{source}_raw_text"
+        for source, detail in free_text_source_details.items()
+        if detail.get("raw_text_fields_present")
+    ]
 
     profile_missing: list[str] = []
     if notice_codes and notice_codes.get("oil_overheat", 0) == 0:
@@ -282,6 +324,8 @@ def _validation_checks(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "observed": sorted(free_text_observed),
             "missing": sorted(free_text_missing),
             "real_output_blocked": True,
+            "source_details": free_text_source_details,
+            "blocked_reasons": free_text_blocked_reasons,
         },
         "replay_degrade": {
             "status": "sample_seen" if coverage.get("replay_true", 0) > 0 else "needs_more_samples",
@@ -291,6 +335,34 @@ def _validation_checks(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "status": "ready_for_review" if not profile_missing else "needs_more_samples",
             "missing": profile_missing,
         },
+    }
+
+
+def _free_text_source_details(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    coverage = report.get("coverage") or {}
+    detail_inputs = {
+        "awards": {
+            "items": coverage.get("awards_items", 0),
+            "raw_text_fields_present": coverage.get("awards_raw_text_fields", 0) > 0,
+        },
+        "combat_feed": {
+            "items": coverage.get("combat_feed_items", 0),
+            "raw_text_fields_present": coverage.get("combat_feed_raw_text_fields", 0) > 0,
+        },
+        "hud_notices": {
+            "items": sum((coverage.get("hud_notice_codes") or {}).values()),
+            "raw_text_fields_present": coverage.get("hud_notice_raw_text_fields", 0) > 0,
+        },
+    }
+    return {
+        source: {
+            "items": int(detail["items"]),
+            "raw_text_fields_present": bool(detail["raw_text_fields_present"]),
+            "prompt_allowed": False,
+            "mode": "dry_run_only",
+        }
+        for source, detail in detail_inputs.items()
+        if detail["items"] > 0
     }
 
 
@@ -495,10 +567,26 @@ def _fmt_validation_checks(checks: dict[str, Any]) -> str:
     for key, value in checks.items():
         if not isinstance(value, dict):
             continue
-        detail = value.get("missing") or value.get("observed") or []
-        suffix = f"({_fmt_list(list(detail))})" if detail else ""
+        if key == "free_text_safety" and value.get("source_details"):
+            detail_text = _fmt_free_text_source_details(value.get("source_details"))
+            suffix = f"({detail_text})" if detail_text else ""
+        else:
+            detail = value.get("missing") or value.get("observed") or []
+            suffix = f"({_fmt_list(list(detail))})" if detail else ""
         parts.append(f"{key}:{value.get('status') or 'unknown'}{suffix}")
     return "; ".join(parts) if parts else "-"
+
+
+def _fmt_free_text_source_details(value: Any) -> str:
+    details = value if isinstance(value, dict) else {}
+    if not details:
+        return ""
+    parts: list[str] = []
+    for source in sorted(details):
+        detail = details.get(source) if isinstance(details.get(source), dict) else {}
+        status = "blocked" if detail.get("prompt_allowed") is False else "allowed"
+        parts.append(f"{source}={detail.get('items', 0)}/{status}")
+    return ", ".join(parts)
 
 
 def _fmt_live_test_plan(plan: list[dict[str, Any]]) -> str:

@@ -58,6 +58,9 @@ def test_offline_report_renders_safe_markdown_with_verdicts():
 
     assert "# neko_warthunder offline readiness report" in text
     assert "| free_text_safety | dry_run_only |" in text
+    assert "awards=1/blocked" in text
+    assert "combat_feed=1/blocked" in text
+    assert "hud_notices=1/blocked" in text
     assert "| replay_degrade | sample_seen |" in text
     assert "## Team brief" in text
     assert "- ready:" in text
@@ -128,6 +131,24 @@ def test_offline_report_cli_can_print_compact_json_without_raw_text():
     assert rc == 0
     assert payload["status"] == "needs_more_samples"
     assert payload["validation_checks"]["free_text_safety"]["status"] == "dry_run_only"
+    assert payload["validation_checks"]["free_text_safety"]["source_details"]["awards"] == {
+        "items": 1,
+        "raw_text_fields_present": True,
+        "prompt_allowed": False,
+        "mode": "dry_run_only",
+    }
+    assert payload["validation_checks"]["free_text_safety"]["source_details"]["combat_feed"] == {
+        "items": 1,
+        "raw_text_fields_present": True,
+        "prompt_allowed": False,
+        "mode": "dry_run_only",
+    }
+    assert payload["validation_checks"]["free_text_safety"]["source_details"]["hud_notices"] == {
+        "items": 1,
+        "raw_text_fields_present": True,
+        "prompt_allowed": False,
+        "mode": "dry_run_only",
+    }
     assert "verify_output_backpressure" in payload["next_steps"]
     assert "verify_kill_coalescing" in payload["next_steps"]
     assert "quick_checklist" in payload

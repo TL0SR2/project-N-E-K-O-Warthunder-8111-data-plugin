@@ -281,6 +281,46 @@ def test_sample_replay_session_summary_groups_validation_readiness():
     assert checks["profile_calibration"]["status"] == "needs_more_samples"
 
 
+def test_sample_replay_free_text_safety_includes_source_details_without_raw_text():
+    from neko_warthunder.tools.sample_replay import replay_sample_root, render_report
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write_jsonl(root / "captures" / "cap" / "processed_8112.jsonl", [{"data": _coverage_frame()}])
+
+        report = replay_sample_root(root, player_name="Pilot")
+        text = render_report(report)
+
+    safety = report["session_summary"]["validation_checks"]["free_text_safety"]
+    assert safety["source_details"] == {
+        "awards": {
+            "items": 1,
+            "raw_text_fields_present": True,
+            "prompt_allowed": False,
+            "mode": "dry_run_only",
+        },
+        "combat_feed": {
+            "items": 3,
+            "raw_text_fields_present": True,
+            "prompt_allowed": False,
+            "mode": "dry_run_only",
+        },
+        "hud_notices": {
+            "items": 1,
+            "raw_text_fields_present": True,
+            "prompt_allowed": False,
+            "mode": "dry_run_only",
+        },
+    }
+    assert safety["blocked_reasons"] == ["awards_raw_text", "combat_feed_raw_text", "hud_notices_raw_text"]
+    assert "awards=1/blocked" in text
+    assert "combat_feed=3/blocked" in text
+    assert "hud_notices=1/blocked" in text
+    assert "RawVictim" not in json.dumps(safety, ensure_ascii=False)
+    assert "raw notice" not in text
+    assert "raw award" not in text
+
+
 def test_sample_replay_session_summary_includes_prioritized_live_test_plan():
     from neko_warthunder.tools.sample_replay import replay_sample_root, render_report
 

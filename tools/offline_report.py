@@ -49,8 +49,7 @@ def build_markdown_report(root: str | pathlib.Path, *, player_name: str = "tl0sr
     ]
     for key in sorted(checks):
         value = checks[key] if isinstance(checks[key], dict) else {}
-        detail = value.get("missing") or value.get("observed") or []
-        lines.append(f"| {key} | {value.get('status') or 'unknown'} | {_inline_list(detail)} |")
+        lines.append(f"| {key} | {value.get('status') or 'unknown'} | {_check_detail(key, value)} |")
 
     lines.extend(
         [
@@ -142,6 +141,25 @@ def _inline_list(values: list[Any]) -> str:
     if not values:
         return "-"
     return ", ".join(f"`{value}`" for value in values)
+
+
+def _check_detail(key: str, value: dict[str, Any]) -> str:
+    if key == "free_text_safety" and value.get("source_details"):
+        return _free_text_detail(value.get("source_details"))
+    detail = value.get("missing") or value.get("observed") or []
+    return _inline_list(detail)
+
+
+def _free_text_detail(value: Any) -> str:
+    details = value if isinstance(value, dict) else {}
+    if not details:
+        return "-"
+    parts: list[str] = []
+    for source in sorted(details):
+        detail = details.get(source) if isinstance(details.get(source), dict) else {}
+        status = "blocked" if detail.get("prompt_allowed") is False else "allowed"
+        parts.append(f"`{source}={detail.get('items', 0)}/{status}`")
+    return ", ".join(parts) if parts else "-"
 
 
 def _live_test_plan_rows(plan: list[Any]) -> list[str]:
