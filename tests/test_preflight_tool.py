@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import tempfile
+import types
 from pathlib import Path
 
 
@@ -92,6 +93,11 @@ def test_preflight_dry_run_prints_commands_without_running():
         text = output.getvalue()
         assert rc == 0
         assert "# neko_warthunder offline preflight" in text
+        assert "## Quick read" in text
+        assert "baseline: logic self-check should report 158/158 passed" in text
+        assert "if this passes: keep dry_run=true and follow the live test plan" in text
+        assert "if this fails: stop before real-machine testing" in text
+        assert "watch live_monitor Summary first" in text
         assert "uv run python tests/run_logic_tests.py" in text
         assert "uv run pytest -c tests/pytest.ini tests -q" in text
         assert "runtime smoke" in text
@@ -141,3 +147,56 @@ def test_preflight_can_write_offline_readiness_report_to_file():
     offline = next(check for check in checks if check.name == "offline readiness report")
     assert offline.name == "offline readiness report"
     assert offline.cmd[-2:] == ["--output", str(report_out)]
+
+
+def test_preflight_run_success_prints_next_action():
+    from neko_warthunder.tools import preflight
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd):
+        calls.append(list(cmd))
+        return types.SimpleNamespace(returncode=0)
+
+    checks = [
+        preflight.Check("logic self-check", Path.cwd(), ["uv", "run", "python", "tests/run_logic_tests.py"]),
+        preflight.Check("runtime smoke", Path.cwd(), ["uv", "run", "python", "tools/live_monitor.py", "--count", "1"]),
+    ]
+    output = io.StringIO()
+
+    original_run = preflight.subprocess.run
+    preflight.subprocess.run = fake_run
+    try:
+        with contextlib.redirect_stdout(output):
+            rc = preflight.run_checks(checks)
+    finally:
+        preflight.subprocess.run = original_run
+
+    text = output.getvalue()
+    assert rc == 0
+    assert len(calls) == 2
+    assert "preflight passed: ready for dry_run live validation" in text
+    assert "keep dry_run=true" in text
+
+
+def test_preflight_run_failure_tells_operator_to_stop():
+    from neko_warthunder.tools import preflight
+
+    def fake_run(cmd, cwd):
+        return types.SimpleNamespace(returncode=7)
+
+    checks = [preflight.Check("runtime smoke", Path.cwd(), ["uv", "run", "python", "tools/live_monitor.py"])]
+    output = io.StringIO()
+
+    original_run = preflight.subprocess.run
+    preflight.subprocess.run = fake_run
+    try:
+        with contextlib.redirect_stdout(output):
+            rc = preflight.run_checks(checks)
+    finally:
+        preflight.subprocess.run = original_run
+
+    text = output.getvalue()
+    assert rc == 7
+    assert "FAILED: runtime smoke exited with 7" in text
+    assert "stop before real-machine testing" in text
