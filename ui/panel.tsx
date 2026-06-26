@@ -52,6 +52,26 @@ type DataLayerState = {
   last_error?: string | null
 }
 
+type ObserveRecord = {
+  ts?: number | string | null
+  trace_id?: string | null
+  event_id?: string | null
+  stage?: string | null
+  outcome?: string | null
+  reason?: string | null
+  scenario?: string | null
+  safety_status?: string | null
+  dry_run?: boolean | null
+}
+
+type ObserveState = {
+  last_event?: ObserveRecord | null
+  last_decision?: ObserveRecord | null
+  last_output_status?: ObserveRecord | null
+  recent_timeline?: ObserveRecord[]
+  observability_enabled?: boolean
+}
+
 type DashboardState = {
   enabled?: boolean
   dry_run?: boolean
@@ -70,6 +90,7 @@ type DashboardState = {
   identity?: IdentityState
   data_layer?: DataLayerState
   safety?: SafetyState
+  observe?: ObserveState
 }
 
 function actionById(actions: HostedAction[], id: string): HostedAction | undefined {
@@ -141,6 +162,50 @@ const IDENTITY_SOURCE_LABELS: Record<string, string> = {
   auto: "自动识别",
 }
 
+const STAGE_LABELS: Record<string, string> = {
+  detector_candidate: "探测候选",
+  detector_suppressed: "探测抑制",
+  arbiter_allowed: "仲裁放行",
+  arbiter_dropped: "仲裁丢弃",
+  arbiter_window: "仲裁窗口",
+  arbiter_preempted: "被高优先级替换",
+  arbiter_cooldown: "冷却中",
+  arbiter_scenario_gated: "场景门控",
+  safety_block: "安全门阻断",
+  dispatcher_dry_run: "模拟输出",
+  dispatcher_pushed: "已推送",
+  dispatcher_failed: "推送失败",
+}
+
+const OUTCOME_LABELS: Record<string, string> = {
+  allowed: "已放行",
+  selected: "已选择",
+  dropped: "已丢弃",
+  suppressed: "已抑制",
+  preempted: "被替换",
+  cooldown: "冷却中",
+  dry_run: "仅模拟",
+  pushed: "已开口",
+  failed: "失败",
+  blocked: "已阻断",
+  expired: "已过期",
+}
+
+const REASON_LABELS: Record<string, string> = {
+  selected: "已选中",
+  dry_run_enabled: "模拟模式开启，仅记录不真实开口",
+  paused: "手动暂停中",
+  safety_paused: "安全门暂停中",
+  auto_paused: "自动暂停中",
+  cooldown_active: "冷却时间内",
+  scenario_gated: "当前场景不允许",
+  scenario_gated_on_flush: "输出时场景已变化",
+  output_backpressure: "输出背压中，旧提示被压住",
+  event_expired: "事件过期，真实开口前丢弃",
+  replay: "回放数据已静默",
+  kill_coalesced: "多杀提示已合并",
+}
+
 function safetyTone(status: string | undefined) {
   if (status === "running") return "success"
   if (status === "paused") return "danger"
@@ -161,11 +226,24 @@ function unwrapActionResult(envelope: any): Record<string, any> {
   return {}
 }
 
+function recordValue(record: ObserveRecord | null | undefined, key: keyof ObserveRecord): string {
+  if (!record) return "-"
+  return text(record[key])
+}
+
+function mappedRecordValue(record: ObserveRecord | null | undefined, key: keyof ObserveRecord, labels: Record<string, string> = {}): string {
+  return mappedText(recordValue(record, key), labels)
+}
+
 export default function NekoWarthunderPanel(props: PluginSurfaceProps<DashboardState>) {
   const state = props.state || {}
   const safety = state.safety || {}
   const identity = state.identity || {}
   const dataLayer = state.data_layer || {}
+  const observe = state.observe || {}
+  const lastEvent = observe.last_event
+  const lastDecision = observe.last_decision
+  const lastOutput = observe.last_output_status
   const actions = Array.isArray(props.actions) ? props.actions : []
   const setDryRunAction = actionById(actions, "set_dry_run")
   const setIdentityAction = actionById(actions, "set_identity")
@@ -232,30 +310,20 @@ export default function NekoWarthunderPanel(props: PluginSurfaceProps<DashboardS
 
       <Grid cols={4}>
         <StatCard label="插件启用" value={text(state.enabled)} />
-        <StatCard label="安全试运行" value={text(state.dry_run)} />
+        <StatCard label="模拟模式" value={state.dry_run ? "开启" : "关闭"} />
         <StatCard label="连接状态" value={mappedText(state.conn_state, CONN_STATE_LABELS)} />
-        <StatCard label="当前场景" value={mappedText(state.scenario, SCENARIO_LABELS)} />
-        <StatCard label="数据层" value={mappedText(dataLayer.mode, DATA_LAYER_LABELS)} />
+        <StatCard label="场景" value={mappedText(state.scenario, SCENARIO_LABELS)} />
+        <StatCard label="最近输出" value={mappedRecordValue(lastOutput, "outcome", OUTCOME_LABELS)} />
       </Grid>
 
       <Grid cols={2}>
-        <Card title="运行状态">
+        <Card title="连接状态">
           <KeyValue
             items={[
               { key: "enabled", label: "插件启用", value: badge(state.enabled) },
-              { key: "dry_run", label: "安全试运行", value: badge(state.dry_run, "开启", "关闭") },
+              { key: "dry_run", label: "模拟模式", value: badge(state.dry_run, "开启", "关闭") },
               { key: "connected", label: "数据连接", value: badge(state.connected, "已连接", "离线") },
               { key: "conn_state", label: "连接状态", value: mappedText(state.conn_state, CONN_STATE_LABELS) },
-              { key: "in_battle", label: "战斗内", value: badge(state.in_battle) },
-              { key: "dead", label: "阵亡状态", value: badge(state.dead) },
-              { key: "domain", label: "模式", value: mappedText(state.domain, DOMAIN_LABELS) },
-              { key: "domain_label", label: "模式说明", value: text(state.domain_label) },
-              { key: "vehicle_type", label: "载具", value: text(state.vehicle_type) },
-              { key: "profile_source", label: "数据库来源", value: text(state.profile_source) },
-              { key: "profile_family", label: "载具族", value: text(state.profile_family) },
-              { key: "profile_matched", label: "数据库匹配", value: badge(state.profile_matched ?? undefined) },
-              { key: "scenario", label: "当前场景", value: mappedText(state.scenario, SCENARIO_LABELS) },
-              { key: "level", label: "风险等级", value: <StatusBadge tone={levelTone(state.level)} label={mappedText(state.level, LEVEL_LABELS)} /> },
               { key: "data_layer.mode", label: "数据层模式", value: mappedText(dataLayer.mode, DATA_LAYER_LABELS) },
               { key: "data_layer.health", label: "数据层健康", value: badge(dataLayer.health) },
               { key: "data_layer.pid", label: "数据层 PID", value: text(dataLayer.pid) },
@@ -265,13 +333,67 @@ export default function NekoWarthunderPanel(props: PluginSurfaceProps<DashboardS
           />
         </Card>
 
-        <Card title="安全状态">
+        <Card title="战场状态">
+          <KeyValue
+            items={[
+              { key: "in_battle", label: "战斗内", value: badge(state.in_battle) },
+              { key: "dead", label: "阵亡状态", value: badge(state.dead) },
+              { key: "domain", label: "模式", value: mappedText(state.domain, DOMAIN_LABELS) },
+              { key: "domain_label", label: "模式说明", value: text(state.domain_label) },
+              { key: "vehicle_type", label: "载具", value: text(state.vehicle_type) },
+              { key: "profile_source", label: "数据库来源", value: text(state.profile_source) },
+              { key: "profile_family", label: "载具族", value: text(state.profile_family) },
+              { key: "profile_matched", label: "数据库匹配", value: badge(state.profile_matched ?? undefined) },
+              { key: "scenario", label: "场景", value: mappedText(state.scenario, SCENARIO_LABELS) },
+              { key: "level", label: "风险等级", value: <StatusBadge tone={levelTone(state.level)} label={mappedText(state.level, LEVEL_LABELS)} /> },
+            ]}
+          />
+        </Card>
+
+        <Card title="安全控制">
           <KeyValue
             items={[
               { key: "safety.status", label: "安全门状态", value: <StatusBadge tone={safetyTone(safety.status)} label={mappedText(safety.status, SAFETY_LABELS)} /> },
               { key: "safety.manual_paused", label: "手动暂停", value: badge(safety.manual_paused) },
               { key: "safety.auto_paused", label: "自动暂停", value: badge(safety.auto_paused) },
-              { key: "safety.failures", label: "失败计数", value: text(safety.failures) },
+              { key: "safety.failures", label: "失败次数", value: text(safety.failures) },
+            ]}
+          />
+          <Stack>
+            <Switch checked={!!state.dry_run} label="模拟模式 dry_run" onChange={setDryRun} />
+            {dryRunError ? <Alert tone="danger">{dryRunError}</Alert> : null}
+            <Grid cols={3}>
+              <ActionButton action={pauseAction} actionId="pause" tone="danger">急停</ActionButton>
+              <ActionButton action={resumeAction} actionId="resume" tone="success">恢复</ActionButton>
+              <ActionButton action={testSayAction} actionId="test_say" values={{ text: "副驾驶面板测试开口" }} refresh={false}>测试开口</ActionButton>
+            </Grid>
+          </Stack>
+        </Card>
+
+        <Card title="最近决策">
+          <KeyValue
+            items={[
+              { key: "last_event.event_id", label: "最近事件", value: recordValue(lastEvent, "event_id") },
+              { key: "last_event.stage", label: "事件阶段", value: mappedRecordValue(lastEvent, "stage", STAGE_LABELS) },
+              { key: "last_decision.event_id", label: "决策事件", value: recordValue(lastDecision, "event_id") },
+              { key: "last_decision.stage", label: "决策阶段", value: mappedRecordValue(lastDecision, "stage", STAGE_LABELS) },
+              { key: "last_decision.outcome", label: "决策结果", value: mappedRecordValue(lastDecision, "outcome", OUTCOME_LABELS) },
+              { key: "last_decision.reason", label: "原因", value: mappedRecordValue(lastDecision, "reason", REASON_LABELS) },
+              { key: "last_decision.scenario", label: "当时场景", value: mappedRecordValue(lastDecision, "scenario", SCENARIO_LABELS) },
+              { key: "last_decision.dry_run", label: "当时模拟模式", value: recordValue(lastDecision, "dry_run") },
+            ]}
+          />
+        </Card>
+
+        <Card title="最近输出">
+          <KeyValue
+            items={[
+              { key: "last_output_status.event_id", label: "输出事件", value: recordValue(lastOutput, "event_id") },
+              { key: "last_output_status.stage", label: "输出阶段", value: mappedRecordValue(lastOutput, "stage", STAGE_LABELS) },
+              { key: "last_output_status.outcome", label: "输出结果", value: mappedRecordValue(lastOutput, "outcome", OUTCOME_LABELS) },
+              { key: "last_output_status.reason", label: "原因", value: mappedRecordValue(lastOutput, "reason", REASON_LABELS) },
+              { key: "last_output_status.safety_status", label: "安全门", value: mappedRecordValue(lastOutput, "safety_status", SAFETY_LABELS) },
+              { key: "last_output_status.dry_run", label: "模拟模式", value: recordValue(lastOutput, "dry_run") },
             ]}
           />
         </Card>
@@ -308,17 +430,6 @@ export default function NekoWarthunderPanel(props: PluginSurfaceProps<DashboardS
         </Stack>
       </Card>
 
-      <Card title="操作">
-        <Stack>
-          <Switch checked={!!state.dry_run} label="安全试运行 dry_run" onChange={setDryRun} />
-          {dryRunError ? <Alert tone="danger">{dryRunError}</Alert> : null}
-          <Grid cols={3}>
-            <ActionButton action={pauseAction} actionId="pause" tone="danger">急停</ActionButton>
-            <ActionButton action={resumeAction} actionId="resume" tone="success">恢复</ActionButton>
-            <ActionButton action={testSayAction} actionId="test_say" values={{ text: "副驾驶面板测试开口" }} refresh={false}>测试开口</ActionButton>
-          </Grid>
-        </Stack>
-      </Card>
     </Page>
   )
 }

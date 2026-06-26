@@ -38,3 +38,23 @@ def test_plugin_manifest_declares_hosted_ui_surface_and_files_exist():
     ]
     assert (_ROOT / "__init__.py").is_file()
     assert (_ROOT / "ui" / "panel.tsx").is_file()
+
+
+def test_hosted_ui_panel_groups_operator_state_in_chinese():
+    panel = (_ROOT / "ui" / "panel.tsx").read_text(encoding="utf-8")
+
+    for section in ["连接状态", "战场状态", "安全控制", "最近决策", "最近输出"]:
+        assert section in panel
+
+    for label in ["模拟模式", "场景", "风险等级", "手动暂停", "自动暂停", "失败次数"]:
+        assert label in panel
+
+
+def test_hosted_ui_panel_keeps_existing_actions_available():
+    panel = (_ROOT / "ui" / "panel.tsx").read_text(encoding="utf-8")
+
+    for action_id in ["set_dry_run", "set_identity", "pause", "resume", "test_say"]:
+        assert action_id in panel
+
+    for label in ["急停", "恢复", "测试开口", "刷新状态"]:
+        assert label in panel
