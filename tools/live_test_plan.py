@@ -91,8 +91,8 @@ _ACTION_DETAILS: dict[str, dict[str, str]] = {
     },
     "verify_output_backpressure": {
         "operation": "dry_run=false 时连续触发同优先级或更低优先级事件，观察是否被输出背压压住。",
-        "monitor": "tools/live_monitor.py Summary、observe.last_output_status、output_backpressure、push_message 时延。",
-        "pass": "Summary 显示 output=dispatcher_suppressed/dropped(output_backpressure)，旧事件不再排队晚回，更高优先级事件仍能通过。",
+        "monitor": "tools/live_monitor.py Summary、observe.last_output_status、output_backpressure、event_expired、push_message 时延。",
+        "pass": "Summary 显示 output=dispatcher_suppressed/dropped(output_backpressure) 或 output=dispatcher_suppressed/dropped(event_expired)，旧事件不再排队晚回，更高优先级事件仍能通过。",
         "fail": "连续事件仍造成晚回、刷屏，或更高优先级事件被误压。",
         "data_gap": "不依赖新 DTO；若现场事件不足，可用 test_say / generic kill-death smoke 补充。",
     },
@@ -250,8 +250,8 @@ def build_quick_checklist(steps: list[dict[str, Any]]) -> list[dict[str, str]]:
             {
                 "order": "7",
                 "user_action": "条件允许时关闭 `dry_run`，复测数值安全或 generic kill/death。",
-                "monitor": "push_message、last_output_status、output_backpressure、kill_coalesced。",
-                "pass": "真实开口不刷屏，旧回复晚到减少，更高优先级事件仍可插队。",
+                "monitor": "push_message、last_output_status、output_backpressure、event_expired、kill_coalesced。",
+                "pass": "真实开口不刷屏，旧回复晚到减少，过期旧事件不真实 push，更高优先级事件仍可插队。",
             }
         )
     return checklist

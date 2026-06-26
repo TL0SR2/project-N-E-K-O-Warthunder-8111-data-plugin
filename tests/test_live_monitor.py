@@ -220,6 +220,56 @@ def _fake_backpressure_fetcher(url: str):
     raise AssertionError(url)
 
 
+def _fake_expired_output_fetcher(url: str):
+    if url.endswith(":48911/health"):
+        return {"ok": True}
+    if url.endswith(":48916/health"):
+        return {"ok": True}
+    if url.endswith(":8112/health"):
+        return {"ok": True}
+    if "/hosted-ui/context" in url:
+        return {
+            "state": {
+                "dry_run": False,
+                "connected": True,
+                "conn_state": "in_battle",
+                "in_battle": True,
+                "domain": "air",
+                "scenario": "IN_FLIGHT",
+                "level": "warning",
+                "safety": {"status": "running", "manual_paused": False, "auto_paused": False, "failures": 0},
+                "observe": {
+                    "last_event": {"event_id": "overspeed", "edge": "enter", "level": "warning"},
+                    "last_decision": {
+                        "event_id": "overspeed",
+                        "stage": "arbiter_allowed",
+                        "outcome": "allowed",
+                        "reason": "selected",
+                        "scenario": "IN_FLIGHT",
+                        "dry_run": False,
+                    },
+                    "last_output_status": {
+                        "event_id": "overspeed",
+                        "stage": "dispatcher_suppressed",
+                        "outcome": "dropped",
+                        "reason": "event_expired",
+                    },
+                },
+            }
+        }
+    if url.endswith(":8112/api/telemetry"):
+        return {
+            "state": "in_battle",
+            "replay": False,
+            "in_battle": True,
+            "domain": "air",
+            "vehicle": {"valid": True},
+            "processed": {"level": "warning", "flags": {"overspeed_warn": True}},
+            "combat": {"feed": []},
+        }
+    raise AssertionError(url)
+
+
 def test_live_monitor_once_summarizes_runtime_without_raw_text():
     from neko_warthunder.tools.live_monitor import monitor_once
 
@@ -319,6 +369,16 @@ def test_live_monitor_summary_includes_actionable_output_reason():
     assert "decision=arbiter_allowed/allowed/kill_coalesced" in text
     assert "Decision detail: kill_coalesced=multiple kills were merged" in text
     assert "Output detail: output_backpressure=real output queue/backpressure suppressed this reply" in text
+
+
+def test_live_monitor_summary_includes_expired_output_reason():
+    from neko_warthunder.tools.live_monitor import monitor_once, render_text_report
+
+    report = monitor_once(fetcher=_fake_expired_output_fetcher, log_reader=lambda _paths: [])
+    text = render_text_report(report)
+
+    assert "output=dispatcher_suppressed/dropped(event_expired)" in text
+    assert "Output detail: event_expired=stale battle event dropped before real push" in text
 
 
 def test_live_monitor_marks_replay_true_as_suppressed_when_observe_matches():

@@ -430,7 +430,7 @@ def _format_output_summary(output: dict[str, Any]) -> str:
         return "-"
     text = f"{output.get('stage') or '-'}/{output.get('outcome') or '-'}"
     reason = output.get("reason")
-    if reason in {"output_backpressure"}:
+    if reason in {"event_expired", "output_backpressure"}:
         text += f"({reason})"
     return text
 
@@ -443,6 +443,7 @@ def _format_reason_detail(reason: Any, *, kind: str) -> str:
         "selected": "Arbiter allowed this event",
         "kill_coalesced": "multiple kills were merged",
         "dry_run_enabled": "dry_run blocked real push",
+        "event_expired": "stale battle event dropped before real push",
         "output_backpressure": "real output queue/backpressure suppressed this reply",
         "manual_pause": "manual pause suppressed output",
         "scenario_gated": "scenario gate suppressed this event",

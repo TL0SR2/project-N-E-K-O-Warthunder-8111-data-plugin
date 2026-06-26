@@ -96,6 +96,7 @@ def test_live_test_plan_includes_runtime_output_followups():
     assert "verify_output_backpressure" in actions
     assert "verify_kill_coalescing" in actions
     assert "output_backpressure" in text
+    assert "event_expired" in text
     assert "kill_coalesced" in text
 
 
