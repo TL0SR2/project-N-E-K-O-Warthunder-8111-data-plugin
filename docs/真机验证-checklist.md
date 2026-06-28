@@ -1,6 +1,6 @@
 # 真机验证 checklist
 
-> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、T-Observe runtime decision timeline、T-Live live monitor summary tool、T-Output output backpressure guard、T-Kill-Coalesce 多杀合并、L8 data-layer subprocess orchestration、identity Hosted UI/action 接缝、L9 起飞低空保护窗口、真实战场事件队列 coalescing、事件过期丢弃、Hosted UI 信息架构整理与 deferred HUD notice 可观测性已完成；逻辑自检以 `163/163 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
+> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、T-Observe runtime decision timeline、T-Live live monitor summary tool、T-Output output backpressure guard、T-Kill-Coalesce 多杀合并、L8 data-layer subprocess orchestration、identity Hosted UI/action 接缝、L9 起飞/滑跑雷达高度保护、真实战场事件队列 coalescing、事件过期丢弃、Hosted UI 信息架构整理与 deferred HUD notice 可观测性已完成；逻辑自检以 `168/168 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
 
 ## 已完成的 Hosted UI Smoke
 
@@ -79,8 +79,9 @@
 4. **基础 action**：依次点 `pause`、`resume`、`test_say`，确认没有 `PLUGIN_UI_ACTION_FAILED`；`pause` 时风险事件应被 suppress，`resume` 后恢复。
 5. **identity / owned combat 回归**：在 Hosted UI 设置游戏昵称，确认 `/api/identity` 与 `/api/telemetry.combat.self.source=manual`；击杀 / 死亡时确认 `is_my_kill=true` / `is_my_death=true` 仍能生成 `you_killed` / `you_died`，并由 T-Observe 解释 Arbiter / Dispatcher 输出。
 6. **数值安全事件**：优先复测 `overheat` / `oil_overheat`、`overspeed_critical`、`stall_risk`、`low_alt_danger`、`low_fuel`；每次看 `observe.last_decision` 是否能解释 allow / drop / cooldown / scenario gate。
-   - 起飞/复活低空保护：出生或机场起飞后 45s 内，`altitude_critical` 不应产生真实低空播报，`observe.last_decision.reason` 应能解释为 `takeoff_low_alt_grace`；同窗口内 `stall_risk`、`overspeed`、`you_died` 不应被该保护误伤。
-   - 保护期后，若仍处于真实低空危险，`low_alt_danger` 应恢复正常 Arbiter / Dispatcher 链路。
+   - 起飞/复活低空保护：优先确认 `processed.radio_altitude_m` 或 `indicators.radio_altitude` 是否可用。出生或机场起飞后 45s 内，`altitude_critical` 不应产生真实低空播报，`observe.last_decision.reason` 应能解释为 `takeoff_low_alt_grace`；若 AGL 可用，雷达高度 `<=10m` 应进入贴地滑跑保护，`>=40m` 应解除。
+   - 贴地滑跑保护：AGL 保护激活时，跑道滑跑阶段的 `overspeed` 不应播报，`observe.last_decision.reason` 应能解释为 `takeoff_radio_altitude_grace`；同窗口内 `stall_risk`、`you_died` 不应被该保护误伤。
+   - 保护期后，若仍处于真实低空危险，`low_alt_danger` 应恢复正常 Arbiter / Dispatcher 链路；若离地后真实超速，`overspeed` 应恢复正常链路。
 7. **自由文本风险路径**：只在 `dry_run=true` 下观察 `combat.feed` / `hud_notices` / `awards`，确认 prompt / dry_run 输出不包含 raw 玩家名、raw HUD 文本或 awards 原文；`live_monitor` 顶部 `Summary` 应显示 free-text 状态，细节行应显示 `free_text=dry_run_only(...)`，并在 `FreeText detail` / `free_text_safety.source_details` 中给出逐源 `.../blocked`。
 8. **replay 降级**：若数据层返回 `replay=true`，确认 Detector 静默、last decision 能说明 suppressed / replay，`live_monitor` 显示 `replay=suppressed(detector_suppressed/replay)` 且 `output_blocked=True`，不触发真实输出。
 9. **样本留存**：把现场抓包放到 `local_samples/` 或本地临时目录，保持 `.gitignore`；仓库只提交聚合统计和脱敏结论。
@@ -92,11 +93,11 @@
 
 | 顺序 | 用户操作 | 我方监控重点 | 通过标准 |
 | --- | --- | --- | --- |
-| 0 | 先跑离线门禁，或确认当天代码未变 | `tests/run_logic_tests.py`、pytest、plugin check、`tools/live_monitor.py --count 1`、`tools/sample_replay.py` / `tools/live_test_plan.py` | 离线基线仍为 `163/163 passed`，runtime smoke 能显示 dry_run / paused / Hosted UI / 8112 状态，操作清单包含 P1/P2 和 runtime output 复测项 |
+| 0 | 先跑离线门禁，或确认当天代码未变 | `tests/run_logic_tests.py`、pytest、plugin check、`tools/live_monitor.py --count 1`、`tools/sample_replay.py` / `tools/live_test_plan.py` | 离线基线仍为 `168/168 passed`，runtime smoke 能显示 dry_run / paused / Hosted UI / 8112 状态，操作清单包含 P1/P2 和 runtime output 复测项 |
 | 1 | 启动宿主、Hosted UI、数据层，打开面板 | `48911/health`、`48916/health`、`8112/health`、Hosted UI context/actions、`data_layer.mode` | 三个 health 正常；`state_empty=false`；actions 含 `set_dry_run` / `pause` / `resume` / `test_say` / `set_identity`；`data_layer.mode` 为 `managed` 或 `external` |
 | 2 | 进战局前设置玩家名 | `/api/identity`、`combat.self.source`、`combat.player_name` | `combat.self.source=manual`，后续 kill/death ownership 围绕该昵称生效 |
 | 3 | 保持 `dry_run=true`，打一轮常规空战或陆战 | `observe.last_event`、`observe.last_decision`、`observe.last_output_status`、`processed.flags` | 事件能解释为 allowed / preempt / cooldown / scenario_gated / dry_run 输出之一 |
-| 3a | 机场起飞 / 复活后低空滑跑或刚离地 | `low_alt_danger`、`observe.last_decision.reason`、其他 critical 事件 | 45s 保护期内低空被 `takeoff_low_alt_grace` 压住；失速、死亡、超速等关键事件不被误压；保护期后低空恢复正常 |
+| 3a | 机场起飞 / 复活后低空滑跑或刚离地 | `radio_altitude_m`、`low_alt_danger`、`overspeed`、`observe.last_decision.reason`、其他 critical 事件 | 45s 保护期内低空被 `takeoff_low_alt_grace` 压住；AGL `<=10m` 进入贴地滑跑保护、`>=40m` 解除；保护激活时滑跑超速被 `takeoff_radio_altitude_grace` 压住；失速、死亡不被误压；保护期后低空/超速恢复正常 |
 | 4 | 触发或等待 owned kill / death | `combat.feed[].is_my_kill` / `is_my_death`、`you_killed` / `you_died` | 生成 generic kill/death，不含 raw 玩家名；death / critical 仍可抢占 |
 | 4a | 分别观察空战 / 陆战 kill-death 文案 | `domain`、`cause`、Dispatcher prompt / 实际输出 | 空战可说击落；陆战击杀说击毁 / 摧毁地面目标；陆战死亡不说被击落；坠毁说坠毁 |
 | 5 | 观察 awards / hud_notices / combat.feed 自由文本源 | `free_text_safety.status`、`source_details`、prompt / dry_run 输出 | `free_text=dry_run_only(...)`，raw HUD / combat.feed / awards 原文不进入 prompt |
@@ -134,7 +135,7 @@
    uv run pytest -c tests\pytest.ini tests -q
    ```
 
-   预期：`163/163 passed`。
+   预期：`168/168 passed`。
 
 3. 启动宿主后启动插件，确认 `status` / Hosted UI context 可返回状态。
 

@@ -13,9 +13,10 @@
 - `T-Output: output backpressure guard` is complete for real `push_message` calls. It suppresses same-or-lower-priority real pushes during `output_backpressure_seconds` while allowing higher-priority events through. Real battle-event pushes also use `coalesce_key=neko_warthunder:battle_event` so the host proactive queue can replace stale unreleased battle cues with the newest event. Events older than `output_event_max_age_seconds` are dropped before real push with `event_expired`.
 - `T-Kill-Coalesce: you_killed multi-kill coalescing` is complete in lightweight form. Owned kill events are buffered for `kill_coalesce_window_seconds`, merged into one `kill_count` event, and cleared by critical preempt.
 - L8 data-layer subprocess orchestration is implemented and locally verified. The plugin can auto-start vendored `wt_server.py` when `:8112` is missing, marks an already-running `:8112` as external, and only stops processes it started itself.
-- L9 first tuning fix is implemented: `takeoff_low_alt_grace_seconds` defaults to 45s and suppresses only `low_alt_danger` during spawn/airport takeoff grace. Stall, overspeed, overheat, low_fuel, and death events are not suppressed by this guard.
+- L9 takeoff tuning is implemented with radio-altitude-first semantics. `radio_altitude_m` is the preferred AGL source for low-altitude/takeoff decisions; `altitude_m` is treated as MSL/field-elevation context when AGL is available.
+- Takeoff/rollout protection keeps the original `takeoff_low_alt_grace_seconds=45` window and adds `takeoff_radio_altitude_enter_m=10` / `takeoff_radio_altitude_exit_m=40` hysteresis. It suppresses `low_alt_danger` during takeoff grace and also suppresses runway-roll `overspeed` while radio-altitude protection is active. Stall, overheat, low_fuel, and death events are not suppressed by this guard.
 - Hosted UI panel has completed a first information-architecture pass: connection status, battle status, safety controls, latest decision, and latest output are grouped in Chinese.
-- Logic self-check currently passes: `163/163`.
+- Logic self-check currently passes: `168/168`.
 - Real-machine smoke passed on 2026-06-21 and 2026-06-23 for Hosted UI context/actions, safety pause/resume, spawn, overspeed warning/critical, low_fuel warning/critical, low-altitude warning/critical, stall warning/critical, overheat warning/critical, identity manual seam, owned kill/death ownership, you_killed / you_died Arbiter decisions, dry-run dispatcher output, and `dry_run=false` push output.
 - 2026-06-23: plugin status reporting was deduped and throttled to avoid host-side `report_status` / ZMQ backpressure spam while still reporting immediately on real state changes.
 - 2026-06-24 live `dry_run=false` testing showed the plugin can push events quickly while the host reply may arrive late and mix older event context. Mitigations now include plugin-side real-output backpressure, host proactive-queue coalescing via `coalesce_key`, and real-push TTL expiry; the next live test should verify they reduce stale queued replies without blocking critical interrupts.
@@ -72,7 +73,7 @@ uv run pytest -c tests\pytest.ini tests -q
 Notes:
 
 - `tools/preflight.py --run` also runs plugin check, synthetic replay, local sample replay, the offline readiness report, and the live test plan when the relevant local paths exist. Use `--report-output <path>` to save the Markdown report; parent directories are created automatically. The printed preflight plan points local sample replay users to `session_summary`, the Markdown / JSON report, and the live operation plan as review entries.
-- `tests/run_logic_tests.py` is the no-host logic self-check and should report `163/163 passed`.
+- `tests/run_logic_tests.py` is the no-host logic self-check and should report `168/168 passed`.
 - The standalone pytest entry uses `tests/pytest.ini` so pytest does not import the host SDK-dependent plugin entrypoint while collecting tests.
 - If an older handoff note still shows the pre-T4 test count, treat it as stale unless it explicitly refers to an older test entry point.
 - The real-machine checklist is in `docs/真机验证-checklist.md`; it now includes the 2026-06-21 dry-run smoke result, the next unified live-test order, and links to the 2026-06-20 offline sample replay report in `docs/样本回放-20260620.md`.
@@ -81,7 +82,7 @@ Notes:
 
 ## Next Recommended Work
 
-1. In the next L9 live pass, verify airport spawn/takeoff behavior: `low_alt_danger` should be suppressed during the 45s takeoff grace, while stall, death, overspeed, and other critical events still pass. Also verify real-output coalescing / `event_expired` reduces stale low-altitude / overspeed replies after newer death or critical events.
+1. In the next L9 live pass, verify airport spawn/takeoff behavior with radio altitude: confirm `radio_altitude_m` appears when available, runway/takeoff protection enters at `<=10m` AGL and releases at `>=40m` AGL, `low_alt_danger` is suppressed during takeoff grace, and runway-roll `overspeed` is suppressed while AGL protection is active. Stall and death should still pass. Also verify real-output coalescing / `event_expired` reduces stale low-altitude / overspeed replies after newer death or critical events.
 2. Continue M3 seams that still need real-machine validation or samples: replay real-sample validation with the `live_monitor` `Summary` / replay degrade status, awards/free-text dry_run validation with `free_text_safety.source_details` / `FreeText detail`, and the remaining failure-field strategy.
 3. Run the remaining real-machine/data-layer/dry_run seams from `docs/真机验证-checklist.md`, using T-Observe to inspect `last_decision` / `last_output_status` while focusing on replay, awards/free-text paths, oil/engine failure details after the data-layer database/profile calibration, and whether T-Output reduces stale real replies.
 4. During live validation, capture a fresh real `/api/telemetry` response under ignored `local_samples/` for comparison with the sanitized `contract/telemetry_sample.json`, then summarize the result with `docs/真机测试结果-template.md`.
