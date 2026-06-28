@@ -365,10 +365,22 @@ def test_status_includes_data_layer_process_snapshot():
 def test_dashboard_context_includes_data_layer_process_snapshot():
     plugin = _plugin_for_report_tests()
     plugin.data_layer_manager = types.SimpleNamespace(snapshot=lambda: {"mode": "managed", "pid": 4321})
+    plugin.state.radio_altitude_m = 8.0
+    plugin.state.altitude_m = 1067.0
+    plugin.state.ias_kmh = 120.0
+    plugin.state.flags = {"altitude_low": True}
+    plugin._takeoff_radio_altitude_grace_active = True
 
     result = asyncio.run(plugin.dashboard_context())
 
     assert result["data_layer"] == {"mode": "managed", "pid": 4321}
+    assert result["telemetry"]["radio_altitude_m"] == 8.0
+    assert result["telemetry"]["altitude_m"] == 1067.0
+    assert result["telemetry"]["flags"] == {"altitude_low": True}
+    assert result["takeoff_protection"]["active"] is True
+    assert result["takeoff_protection"]["enter_m"] == 10.0
+    assert result["takeoff_protection"]["exit_m"] == 40.0
+    assert result["takeoff_protection"]["suppresses"] == ["low_alt_danger", "overspeed"]
 
 
 def test_manual_pause_suppresses_detected_event_before_dispatcher():

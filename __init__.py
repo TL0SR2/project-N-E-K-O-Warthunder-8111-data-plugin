@@ -372,11 +372,33 @@ class NekoWarthunderPlugin(NekoPluginBase):
             self._last_status_report_at = now
             pass
 
-    # -------------------------------------------------------------- Hosted UI
-    @ui.context(id="dashboard", title="战雷猫娘副驾驶")
-    async def dashboard_context(self):
-        with self._state_lock:
-            s = self.state
+    def _telemetry_snapshot(self, s: BattleState) -> dict[str, Any]:
+        return {
+            "age_seconds": s.age_seconds,
+            "ias_kmh": s.ias_kmh,
+            "mach": s.mach,
+            "altitude_m": s.altitude_m,
+            "radio_altitude_m": s.radio_altitude_m,
+            "climb_ms": s.climb_ms,
+            "fuel_fraction": s.fuel_fraction,
+            "level": s.level,
+            "flags": dict(sorted((s.flags or {}).items())),
+        }
+
+    def _takeoff_protection_snapshot(self, s: BattleState) -> dict[str, Any]:
+        radio_altitude_m = s.radio_altitude_m
+        active = bool(getattr(self, "_takeoff_radio_altitude_grace_active", False))
+        return {
+            "active": active,
+            "radio_altitude_m": radio_altitude_m,
+            "radio_altitude_available": radio_altitude_m is not None,
+            "enter_m": self.cfg.takeoff_radio_altitude_enter_m,
+            "exit_m": self.cfg.takeoff_radio_altitude_exit_m,
+            "low_alt_grace_seconds": self.cfg.takeoff_low_alt_grace_seconds,
+            "suppresses": ["low_alt_danger", "overspeed"] if active else [],
+        }
+
+    def _dashboard_payload(self, s: BattleState) -> dict[str, Any]:
         return {
             "enabled": self.cfg.enabled,
             "dry_run": self.cfg.dry_run,
@@ -394,9 +416,18 @@ class NekoWarthunderPlugin(NekoPluginBase):
             "level": s.level,
             "identity": identity_summary_from_combat(s.combat),
             "data_layer": self.data_layer_manager.snapshot(),
+            "telemetry": self._telemetry_snapshot(s),
+            "takeoff_protection": self._takeoff_protection_snapshot(s),
             "safety": self.safety.snapshot(),
             "observe": self.timeline.snapshot(),
         }
+
+    # -------------------------------------------------------------- Hosted UI
+    @ui.context(id="dashboard", title="战雷猫娘副驾驶")
+    async def dashboard_context(self):
+        with self._state_lock:
+            s = self.state
+        return self._dashboard_payload(s)
 
     # ------------------------------------------------------------------ 动作
     @ui.action(id="set_dry_run", label="设置 dry_run", tone="primary", group="runtime", order=10, refresh_context=True)
@@ -523,23 +554,4 @@ class NekoWarthunderPlugin(NekoPluginBase):
     def status(self, **_):
         with self._state_lock:
             s = self.state
-        return Ok({
-            "enabled": self.cfg.enabled,
-            "dry_run": self.cfg.dry_run,
-            "connected": s.connected,
-            "conn_state": s.conn_state,
-            "in_battle": s.in_battle,
-            "dead": s.dead,
-            "domain": s.domain,
-            "domain_label": s.domain_label,
-            "vehicle_type": s.vehicle_type,
-            "profile_matched": s.profile_matched,
-            "profile_source": s.profile_source,
-            "profile_family": s.profile_family,
-            "scenario": s.scenario,
-            "level": s.level,
-            "identity": identity_summary_from_combat(s.combat),
-            "data_layer": self.data_layer_manager.snapshot(),
-            "safety": self.safety.snapshot(),
-            "observe": self.timeline.snapshot(),
-        })
+        return Ok(self._dashboard_payload(s))

@@ -43,10 +43,20 @@ def test_plugin_manifest_declares_hosted_ui_surface_and_files_exist():
 def test_hosted_ui_panel_groups_operator_state_in_chinese():
     panel = (_ROOT / "ui" / "panel.tsx").read_text(encoding="utf-8")
 
-    for section in ["连接状态", "战场状态", "安全控制", "最近决策", "最近输出"]:
+    for section in ["连接状态", "战场状态", "飞行诊断", "起飞保护", "安全控制", "最近决策", "最近输出"]:
         assert section in panel
 
-    for label in ["模拟模式", "场景", "风险等级", "手动暂停", "自动暂停", "失败次数"]:
+    for label in [
+        "模拟模式",
+        "场景",
+        "风险等级",
+        "雷达高度",
+        "当前 flags",
+        "当前压制",
+        "手动暂停",
+        "自动暂停",
+        "失败次数",
+    ]:
         assert label in panel
 
 

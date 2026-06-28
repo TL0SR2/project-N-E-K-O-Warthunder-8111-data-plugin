@@ -52,6 +52,28 @@ type DataLayerState = {
   last_error?: string | null
 }
 
+type TelemetryState = {
+  age_seconds?: number | null
+  ias_kmh?: number | null
+  mach?: number | null
+  altitude_m?: number | null
+  radio_altitude_m?: number | null
+  climb_ms?: number | null
+  fuel_fraction?: number | null
+  level?: string | null
+  flags?: Record<string, boolean>
+}
+
+type TakeoffProtectionState = {
+  active?: boolean
+  radio_altitude_m?: number | null
+  radio_altitude_available?: boolean
+  enter_m?: number | null
+  exit_m?: number | null
+  low_alt_grace_seconds?: number | null
+  suppresses?: string[]
+}
+
 type ObserveRecord = {
   ts?: number | string | null
   trace_id?: string | null
@@ -89,6 +111,8 @@ type DashboardState = {
   level?: string
   identity?: IdentityState
   data_layer?: DataLayerState
+  telemetry?: TelemetryState
+  takeoff_protection?: TakeoffProtectionState
   safety?: SafetyState
   observe?: ObserveState
 }
@@ -105,6 +129,26 @@ function text(value: unknown): string {
 
 function badge(value: boolean | undefined, yes = "是", no = "否") {
   return <StatusBadge tone={value ? "success" : "warning"} label={value ? yes : no} />
+}
+
+function numberText(value: unknown, unit = "", digits = 0): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-"
+  return `${value.toFixed(digits)}${unit}`
+}
+
+function percentText(value: unknown): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-"
+  return `${Math.round(value * 100)}%`
+}
+
+function flagsText(flags: Record<string, boolean> | undefined): string {
+  if (!flags) return "-"
+  const active = Object.keys(flags).filter((key) => flags[key])
+  return active.length ? active.join(", ") : "无"
+}
+
+function listText(values: string[] | undefined): string {
+  return values && values.length ? values.join(", ") : "-"
 }
 
 function mappedText(value: unknown, labels: Record<string, string> = {}): string {
@@ -241,6 +285,8 @@ export default function NekoWarthunderPanel(props: PluginSurfaceProps<DashboardS
   const safety = state.safety || {}
   const identity = state.identity || {}
   const dataLayer = state.data_layer || {}
+  const telemetry = state.telemetry || {}
+  const takeoffProtection = state.takeoff_protection || {}
   const observe = state.observe || {}
   const lastEvent = observe.last_event
   const lastDecision = observe.last_decision
@@ -347,6 +393,35 @@ export default function NekoWarthunderPanel(props: PluginSurfaceProps<DashboardS
               { key: "profile_matched", label: "数据库匹配", value: badge(state.profile_matched ?? undefined) },
               { key: "scenario", label: "场景", value: mappedText(state.scenario, SCENARIO_LABELS) },
               { key: "level", label: "风险等级", value: <StatusBadge tone={levelTone(state.level)} label={mappedText(state.level, LEVEL_LABELS)} /> },
+            ]}
+          />
+        </Card>
+
+        <Card title="飞行诊断">
+          <KeyValue
+            items={[
+              { key: "telemetry.radio_altitude_m", label: "雷达高度", value: numberText(telemetry.radio_altitude_m, "m") },
+              { key: "telemetry.altitude_m", label: "海拔高度", value: numberText(telemetry.altitude_m, "m") },
+              { key: "telemetry.ias_kmh", label: "IAS", value: numberText(telemetry.ias_kmh, "km/h") },
+              { key: "telemetry.mach", label: "Mach", value: numberText(telemetry.mach, "", 2) },
+              { key: "telemetry.climb_ms", label: "垂直速度", value: numberText(telemetry.climb_ms, "m/s", 1) },
+              { key: "telemetry.fuel_fraction", label: "燃油比例", value: percentText(telemetry.fuel_fraction) },
+              { key: "telemetry.flags", label: "当前 flags", value: flagsText(telemetry.flags) },
+              { key: "telemetry.age_seconds", label: "数据延迟", value: numberText(telemetry.age_seconds, "s", 1) },
+            ]}
+          />
+        </Card>
+
+        <Card title="起飞保护">
+          <KeyValue
+            items={[
+              { key: "takeoff.active", label: "保护状态", value: badge(takeoffProtection.active, "生效", "未生效") },
+              { key: "takeoff.radio_altitude_available", label: "雷达高度可用", value: badge(takeoffProtection.radio_altitude_available, "可用", "不可用") },
+              { key: "takeoff.radio_altitude_m", label: "当前 AGL", value: numberText(takeoffProtection.radio_altitude_m, "m") },
+              { key: "takeoff.enter_m", label: "进入阈值", value: numberText(takeoffProtection.enter_m, "m") },
+              { key: "takeoff.exit_m", label: "解除阈值", value: numberText(takeoffProtection.exit_m, "m") },
+              { key: "takeoff.low_alt_grace_seconds", label: "时间保护", value: numberText(takeoffProtection.low_alt_grace_seconds, "s") },
+              { key: "takeoff.suppresses", label: "当前压制", value: listText(takeoffProtection.suppresses) },
             ]}
           />
         </Card>
