@@ -55,7 +55,7 @@
 - 被抑制 Scenario：SPAWNING（grace）、OUT_OF_BATTLE、DEAD、BATTLE_ENDED。
 - severity 8 / priority 9 / 抢占 是 / cooldown 15s。
 - re-arm：退出阈值（IAS 回升、AoA 正常）保持 ≥3s 后可再触发。
-- payload：`ias_kmh`、`aoa_deg`、`altitude_m`、`vertical_speed_ms`。
+- payload：`ias_kmh`、`aoa_deg`、`radio_altitude_m`（AGL，若数据层提供）、`altitude_m`（MSL/海拔事实）、`vertical_speed_ms`。
 - 缺字段降级：无 `AoA` → IAS+下沉粗判（误判↑）；无 `IAS` → 砍。
 - 误判风险：高（逐机失速速度不同、AoA 抖动、降落正常低速）。
 - 提示意图：警示濒临失速，促使加速/松杆改出。
@@ -68,9 +68,9 @@
 - 被抑制 Scenario：SPAWNING、OUT_OF_BATTLE、DEAD、BATTLE_ENDED。
 - severity 9 / priority 9 / 抢占 是 / cooldown 10s。
 - re-arm：高度回升过退出线 或 Vy 转正 保持 ≥2s。
-- payload：`altitude_m`、`vertical_speed_ms`、`ias_kmh`。
+- payload：`radio_altitude_m`（AGL，优先用于离地/低空判断和提示）、`altitude_m`（MSL/海拔事实，仅作上下文）、`vertical_speed_ms`、`ias_kmh`。
 - 缺字段降级：只有 `H` 无 `Vy` → 用历史差分算下降率（更糙）。
-- 误判风险：高且结构性——`H` 是海拔非离地（AGL），山区/丘陵易误判；只在"低 + 大下沉"组合触发以压误判。
+- 误判风险：高且结构性——`H`/`altitude_m` 是海拔非离地（AGL），山区/丘陵易误判；插件侧已统一优先 `radio_altitude_m`。当 AGL 不可用时，仍需把 `altitude_m` 视为降级上下文，并通过起飞/滑跑保护、confirm 窗口和场景门控压误判。
 - 提示意图：警示离地过近且在下沉，促使立即拉起。
 
 #### `overspeed` 超速

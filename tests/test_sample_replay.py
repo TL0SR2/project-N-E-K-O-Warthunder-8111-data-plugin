@@ -277,8 +277,83 @@ def test_sample_replay_session_summary_groups_validation_readiness():
     assert checks["ownership"]["status"] == "ready_for_review"
     assert checks["free_text_safety"]["status"] == "dry_run_only"
     assert checks["free_text_safety"]["observed"] == ["awards", "combat_feed", "hud_notices"]
-    assert checks["replay_degrade"]["status"] == "sample_seen"
+    assert checks["replay_degrade"]["status"] == "suppressed"
+    assert checks["replay_degrade"]["telemetry_replay_frames"] == 1
+    assert checks["replay_degrade"]["detector_suppressed"] is True
+    assert checks["replay_degrade"]["output_blocked"] is True
+    assert checks["replay_degrade"]["prompt_allowed"] is False
     assert checks["profile_calibration"]["status"] == "needs_more_samples"
+
+
+def test_sample_replay_replay_true_contract_is_suppressed_without_output():
+    from neko_warthunder.tools.sample_replay import replay_sample_root, render_report
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        frame = _coverage_frame()
+        frame["processed"]["flags"] = {"stall_critical": True, "engine_overheat": True}
+        _write_jsonl(root / "captures" / "cap" / "processed_8112.jsonl", [{"data": frame}])
+
+        report = replay_sample_root(root, player_name="Pilot")
+        text = render_report(report)
+
+    replay = report["session_summary"]["validation_checks"]["replay_degrade"]
+    assert replay == {
+        "status": "suppressed",
+        "missing": [],
+        "telemetry_replay_frames": 1,
+        "candidate_events": 0,
+        "chosen_events": 0,
+        "dry_run_outputs": 0,
+        "detector_suppressed": True,
+        "output_blocked": True,
+        "prompt_allowed": False,
+    }
+    assert report["events"] == {}
+    assert report["chosen"] == {}
+    assert report["dry_run_outputs"] == {}
+    assert "replay_degrade:suppressed(replay=1/suppressed, output_blocked=True, prompt_allowed=False)" in text
+    assert "raw notice" not in text
+
+
+def test_sample_replay_free_text_safety_includes_source_details_without_raw_text():
+    from neko_warthunder.tools.sample_replay import replay_sample_root, render_report
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write_jsonl(root / "captures" / "cap" / "processed_8112.jsonl", [{"data": _coverage_frame()}])
+
+        report = replay_sample_root(root, player_name="Pilot")
+        text = render_report(report)
+
+    safety = report["session_summary"]["validation_checks"]["free_text_safety"]
+    assert safety["source_details"] == {
+        "awards": {
+            "items": 1,
+            "raw_text_fields_present": True,
+            "prompt_allowed": False,
+            "mode": "dry_run_only",
+        },
+        "combat_feed": {
+            "items": 3,
+            "raw_text_fields_present": True,
+            "prompt_allowed": False,
+            "mode": "dry_run_only",
+        },
+        "hud_notices": {
+            "items": 1,
+            "raw_text_fields_present": True,
+            "prompt_allowed": False,
+            "mode": "dry_run_only",
+        },
+    }
+    assert safety["blocked_reasons"] == ["awards_raw_text", "combat_feed_raw_text", "hud_notices_raw_text"]
+    assert "awards=1/blocked" in text
+    assert "combat_feed=3/blocked" in text
+    assert "hud_notices=1/blocked" in text
+    assert "RawVictim" not in json.dumps(safety, ensure_ascii=False)
+    assert "raw notice" not in text
+    assert "raw award" not in text
 
 
 def test_sample_replay_session_summary_includes_prioritized_live_test_plan():
@@ -312,6 +387,13 @@ def test_sample_replay_session_summary_includes_prioritized_live_test_plan():
         "status": "needs_more_samples",
         "priority": "P2",
         "action": "capture_oil_overheat_notice",
+    } in plan
+    assert {
+        "area": "profile_calibration",
+        "label": "油温/动力故障校准",
+        "status": "needs_more_samples",
+        "priority": "P2",
+        "action": "wait_for_powertrain_profile_or_sample",
     } in plan
     assert {
         "area": "runtime_output",

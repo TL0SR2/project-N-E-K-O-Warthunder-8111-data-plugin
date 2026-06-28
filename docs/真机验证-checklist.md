@@ -1,6 +1,6 @@
 # 真机验证 checklist
 
-> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、T-Observe runtime decision timeline、T-Live live monitor summary tool、T-Output output backpressure guard、T-Kill-Coalesce 多杀合并、identity Hosted UI/action 接缝已完成；逻辑自检以 `127/127 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
+> 当前 M1/M2 主链路、Hosted UI、T4 集成测试、T-Safety output text sanitizer、T-Observe runtime decision timeline、T-Live live monitor summary tool、T-Output output backpressure guard、T-Kill-Coalesce 多杀合并、L8 data-layer subprocess orchestration、identity Hosted UI/action 接缝、L9 起飞/滑跑雷达高度保护、真实战场事件队列 coalescing、事件过期丢弃、Hosted UI 信息架构整理与 deferred HUD notice 可观测性已完成；逻辑自检以 `168/168 passed` 为准。数据层 `v1.6` 已合并，真机验证目标从“等待字段”改为“验证 v1.6 DTO 接缝”。
 
 ## 已完成的 Hosted UI Smoke
 
@@ -18,7 +18,7 @@
 - `pause` 已验证：`safety.status=paused`、`manual_paused=true`，风险事件被 Arbiter 以 `reason=paused` suppress。
 - `resume` 已验证：`safety.status=running`、`manual_paused=false`，恢复后 `low_alt_danger` 可被 Arbiter allowed 并进入 dry_run dispatcher。
 - `test_say` 已验证：宿主日志出现多条 `TRIGGER entry='test_say'`，未出现 `PLUGIN_UI_ACTION_FAILED`。
-- `set_identity` 已通过 Hosted UI/action 链路接入，但尚未做真机玩家名归属验证。
+- `set_identity` 已通过 Hosted UI/action 链路接入；面板已支持安全化 `combat.active_players` 候选点选自己。
 - 数值安全链路已观察到：`stall_risk`、`low_alt_danger`，并保留此前 `overspeed`、`low_fuel`、`you_died` dry_run 观察结论。
 - 未发现 Traceback / ERROR / TTS push 报错。
 
@@ -52,10 +52,18 @@
 - 现场确认猫娘实际开口；未发现 `PLUGIN_UI_ACTION_FAILED`、Traceback、TTS/push 报错。
 - 记录边界：本节只记录聚合结论，不写 raw 玩家名、raw combat.feed 原文或 raw HUD 文本。
 
+## 已完成的 L8 数据层生命周期自验证（2026-06-26）
+
+- managed 模式：基线 `48916` / `8112` 均关闭；启动宿主后调用 `/plugins/refresh` 与 `/plugin/neko_warthunder/start`，插件自动拉起 `8112`，Hosted UI context 返回 `data_layer.mode=managed`、`started_by_plugin=true`、`health=true`。
+- managed 关闭：调用 `/plugin/neko_warthunder/stop` 后，插件自己拉起的 `8112` 退出，`8112/health` 不再可连接。
+- external 模式：手动预先启动 vendored `wt_server.py --port 8112` 后再启动插件，Hosted UI context 返回 `data_layer.mode=external`、`started_by_plugin=false`、`health=true`。
+- external 关闭：调用 `/plugin/neko_warthunder/stop` 后，外部 `8112` 仍可访问且未被误杀。
+- 测试结束后已清理本轮宿主与外部数据层进程，`48911` / `48916` / `8112` 均关闭。
+
 待复核：
 
 - replay 降级：插件侧离线合同已覆盖 Detector 静默、`detector_suppressed/replay` 观测记录和 `live_monitor` 的 `replay_degrade` 汇总；仍需真实 `replay=true` 样本验证。
-- 油温/发动机细项：过热基础链路已过；油温 / 发动机温度数据库和 `powertrain_failure` 策略仍后置，`powertrain_failure` 暂不直接播报。
+- 油温/发动机细项：过热基础链路已过；油温 / 发动机温度数据库和 `powertrain_failure` 策略仍后置，`powertrain_failure` 暂不直接播报，但应在 T-Observe / live monitor 中显示为 `detector_suppressed/deferred_hud_notice`。
 
 ## 下一轮统一测试现场顺序
 
@@ -63,12 +71,17 @@
 
 1. **离线门禁**：按 `docs/统一测试前-离线检查.md` 跑完逻辑测试、pytest、plugin check、合成 replay、本地样本 replay。
 2. **启动链路**：启动 N.E.K.O 宿主、Hosted UI、数据层 `:8112`，确认三项 health 正常。
-   - 当前工作区通过 junction 挂载独立插件仓库；若宿主没有发现 `neko_warthunder`，用 `PLUGIN_CONFIG_ROOT=D:\Users\zheng\Documents\Code\N-E-K-O-Warthunder` 重启宿主，再调用 `/plugins/refresh` 与 `/plugin/neko_warthunder/start`。
+   - 当前工作区通过 junction 挂载独立插件仓库；手动启动宿主时不要设置 `PLUGIN_CONFIG_ROOT` 指向外层工作区，避免重复扫到独立仓库目录或加载旧副本。若宿主没有发现 `neko_warthunder`，先检查 `N.E.K.O\plugin\plugins\neko_warthunder` 是否仍是指向独立仓库的 junction，再调用 `/plugins/refresh` 与 `/plugin/neko_warthunder/start`。
+   - 若出现 `neko_warthunder_1`，或 `dry_run=true` 下 `test_say` 返回 `pushed=true`，说明运行副本没有对齐；先停止测试并修复运行路径。
    - Hosted UI 侧以 context `state_empty=false`、actions 包含 `set_dry_run` / `pause` / `resume` / `test_say` / `set_identity` 作为注册通过信号。
 3. **打开面板**：确认 `dry_run=true`，观察 `connected` / `conn_state` / `in_battle` / `scenario` / `safety` / `observe.last_decision` / `observe.last_output_status`。
+   - 面板应按连接状态、战场状态、安全控制、最近决策、最近输出分区显示，并使用中文化标签和常见中文状态值；如仍出现大量 `enabled` / `conn_state` / `scenario` / `safety.status` 等裸字段名，记录为 Hosted UI 文案回归。
 4. **基础 action**：依次点 `pause`、`resume`、`test_say`，确认没有 `PLUGIN_UI_ACTION_FAILED`；`pause` 时风险事件应被 suppress，`resume` 后恢复。
 5. **identity / owned combat 回归**：在 Hosted UI 设置游戏昵称，确认 `/api/identity` 与 `/api/telemetry.combat.self.source=manual`；击杀 / 死亡时确认 `is_my_kill=true` / `is_my_death=true` 仍能生成 `you_killed` / `you_died`，并由 T-Observe 解释 Arbiter / Dispatcher 输出。
 6. **数值安全事件**：优先复测 `overheat` / `oil_overheat`、`overspeed_critical`、`stall_risk`、`low_alt_danger`、`low_fuel`；每次看 `observe.last_decision` 是否能解释 allow / drop / cooldown / scenario gate。
+   - 起飞/复活低空保护：优先确认 `processed.radio_altitude_m` 或 `indicators.radio_altitude` 是否可用。出生或机场起飞后 45s 内，`altitude_critical` 不应产生真实低空播报，`observe.last_decision.reason` 应能解释为 `takeoff_low_alt_grace`；若 AGL 可用，雷达高度 `<=10m` 应进入贴地滑跑保护，`>=40m` 应解除。
+   - 贴地滑跑保护：AGL 保护激活时，跑道滑跑阶段的 `overspeed` 不应播报，`observe.last_decision.reason` 应能解释为 `takeoff_radio_altitude_grace`；同窗口内 `stall_risk`、`you_died` 不应被该保护误伤。
+   - 保护期后，若仍处于真实低空危险，`low_alt_danger` 应恢复正常 Arbiter / Dispatcher 链路；若离地后真实超速，`overspeed` 应恢复正常链路。
 7. **自由文本风险路径**：只在 `dry_run=true` 下观察 `combat.feed` / `hud_notices` / `awards`，确认 prompt / dry_run 输出不包含 raw 玩家名、raw HUD 文本或 awards 原文；`live_monitor` 顶部 `Summary` 应显示 free-text 状态，细节行应显示 `free_text=dry_run_only(...)`，并在 `FreeText detail` / `free_text_safety.source_details` 中给出逐源 `.../blocked`。
 8. **replay 降级**：若数据层返回 `replay=true`，确认 Detector 静默、last decision 能说明 suppressed / replay，`live_monitor` 显示 `replay=suppressed(detector_suppressed/replay)` 且 `output_blocked=True`，不触发真实输出。
 9. **样本留存**：把现场抓包放到 `local_samples/` 或本地临时目录，保持 `.gitignore`；仓库只提交聚合统计和脱敏结论。
@@ -80,14 +93,16 @@
 
 | 顺序 | 用户操作 | 我方监控重点 | 通过标准 |
 | --- | --- | --- | --- |
-| 0 | 先跑离线门禁，或确认当天代码未变 | `tests/run_logic_tests.py`、pytest、plugin check、`tools/sample_replay.py` / `tools/live_test_plan.py` | 离线基线仍为 `127/127 passed`，操作清单包含 P1/P2 和 runtime output 复测项 |
-| 1 | 启动宿主、Hosted UI、数据层，打开面板 | `48911/health`、`48916/health`、`8112/health`、Hosted UI context/actions | 三个 health 正常；`state_empty=false`；actions 含 `set_dry_run` / `pause` / `resume` / `test_say` / `set_identity` |
+| 0 | 先跑离线门禁，或确认当天代码未变 | `tests/run_logic_tests.py`、pytest、plugin check、`tools/live_monitor.py --count 1`、`tools/sample_replay.py` / `tools/live_test_plan.py` | 离线基线仍为 `168/168 passed`，runtime smoke 能显示 dry_run / paused / Hosted UI / 8112 状态，操作清单包含 P1/P2 和 runtime output 复测项 |
+| 1 | 启动宿主、Hosted UI、数据层，打开面板 | `48911/health`、`48916/health`、`8112/health`、Hosted UI context/actions、`data_layer.mode` | 三个 health 正常；`state_empty=false`；actions 含 `set_dry_run` / `pause` / `resume` / `test_say` / `set_identity`；`data_layer.mode` 为 `managed` 或 `external` |
 | 2 | 进战局前设置玩家名 | `/api/identity`、`combat.self.source`、`combat.player_name` | `combat.self.source=manual`，后续 kill/death ownership 围绕该昵称生效 |
 | 3 | 保持 `dry_run=true`，打一轮常规空战或陆战 | `observe.last_event`、`observe.last_decision`、`observe.last_output_status`、`processed.flags` | 事件能解释为 allowed / preempt / cooldown / scenario_gated / dry_run 输出之一 |
+| 3a | 机场起飞 / 复活后低空滑跑或刚离地 | `radio_altitude_m`、`low_alt_danger`、`overspeed`、`observe.last_decision.reason`、其他 critical 事件 | 45s 保护期内低空被 `takeoff_low_alt_grace` 压住；AGL `<=10m` 进入贴地滑跑保护、`>=40m` 解除；保护激活时滑跑超速被 `takeoff_radio_altitude_grace` 压住；失速、死亡不被误压；保护期后低空/超速恢复正常 |
 | 4 | 触发或等待 owned kill / death | `combat.feed[].is_my_kill` / `is_my_death`、`you_killed` / `you_died` | 生成 generic kill/death，不含 raw 玩家名；death / critical 仍可抢占 |
+| 4a | 分别观察空战 / 陆战 kill-death 文案 | `domain`、`cause`、Dispatcher prompt / 实际输出 | 空战可说击落；陆战击杀说击毁 / 摧毁地面目标；陆战死亡不说被击落；坠毁说坠毁 |
 | 5 | 观察 awards / hud_notices / combat.feed 自由文本源 | `free_text_safety.status`、`source_details`、prompt / dry_run 输出 | `free_text=dry_run_only(...)`，raw HUD / combat.feed / awards 原文不进入 prompt |
 | 6 | 若出现 replay，继续观察不要手动触发输出 | `replay=true`、`detector_suppressed/replay`、`output_blocked` | replay 帧静默，`live_monitor` 显示 replay suppressed，不真实开口 |
-| 7 | 条件允许时关闭 `dry_run`，复测数值安全或 generic kill/death | `push_message`、`last_output_status`、`output_backpressure`、`kill_coalesced` | 真实开口不刷屏；旧回复晚到减少；更高优先级事件仍可插队 |
+| 7 | 条件允许时关闭 `dry_run`，复测数值安全或 generic kill/death | `push_message`、`last_output_status`、`output_backpressure`、`event_expired`、`coalesce_key=neko_warthunder:battle_event`、`kill_coalesced` | 真实开口不刷屏；旧回复晚到减少；死亡/critical 等新事件能替换宿主队列里的旧低空/超速提示；过期旧事件不真实 push；更高优先级事件仍可插队 |
 
 现场优先级：
 
@@ -120,7 +135,7 @@
    uv run pytest -c tests\pytest.ini tests -q
    ```
 
-   预期：`127/127 passed`。
+   预期：`168/168 passed`。
 
 3. 启动宿主后启动插件，确认 `status` / Hosted UI context 可返回状态。
 
@@ -164,7 +179,7 @@
    uv run python tools/sample_replay.py local_samples/data_process_20260620 tl0sr2
    ```
 
-   当前样本的聚合回放结论见 `docs/样本回放-20260620.md`。该报告只记录统计和缺口，不提交原始抓包文本；`session_summary` 可直接给出已观察事件、dry_run 输出、分组 validation verdict、P1/P2 `live_test_plan` 和下一步补测项。需要机器可读结果时使用 `--json`，需要可交付 Markdown 汇报时使用 `tools/offline_report.py`；需要操作清单时使用 `tools/live_test_plan.py`。`sample_replay` / `offline_report` / `live_test_plan` 三个出口与 `session_summary.next_steps` 都会列出 T-Output 背压与 T-Kill-Coalesce 多杀合并复测项；真机测试进行中用 `tools/live_monitor.py` 做只读安全摘要，先看 `Summary` 行，再查看 `free_text=dry_run_only(...)`、`FreeText detail` 和 JSON 的 `free_text_safety.source_details` 是否按预期出现。该报告包含 Team brief、Operator quick checklist 和 Next live-test plan，也可通过 `tools/preflight.py --run --report-output <path>` 在统一预检时保存并打印操作清单。
+   当前样本的聚合回放结论见 `docs/样本回放-20260620.md`。该报告只记录统计和缺口，不提交原始抓包文本；`session_summary` 可直接给出已观察事件、dry_run 输出、分组 validation verdict、P1/P2 `live_test_plan` 和下一步补测项；若样本含 `replay=true`，`replay_degrade` 还会给出 suppressed / output blocked 合同。需要机器可读结果时使用 `--json`，需要可交付 Markdown 汇报时使用 `tools/offline_report.py`；需要操作清单时使用 `tools/live_test_plan.py`。`sample_replay` / `offline_report` / `live_test_plan` 三个出口与 `session_summary.next_steps` 都会列出 T-Output 背压与 T-Kill-Coalesce 多杀合并复测项；真机测试进行中用 `tools/live_monitor.py` 做只读安全摘要，先看 `Summary` 行，再查看 `free_text=dry_run_only(...)`、`FreeText detail` 和 JSON 的 `free_text_safety.source_details` 是否按预期出现；看 `Decision detail` / `Output detail` 解释 selected、dry_run、coalescing 或 backpressure。该报告包含 Team brief、Next test focus、Operator quick checklist 和 Next live-test plan，也可通过 `tools/preflight.py --run --report-output <path>` 在统一预检时保存并打印操作清单。
 
    重点看输出 `coverage:` 行里的 `is_my_kill_field` / `is_my_death_field` / `involves_me_field`、`is_my_kill_true` / `is_my_death_true` / `involves_me_true`、`combat_self_source`、`hud_notice_codes`、`hud_notice_severities`、`awards_items`、`replay_true`，以及 `coverage_gaps:` 行。如果 `coverage_gaps` 含 `combat_feed_missing_ownership_fields`，说明样本里完全没有新归属字段；如果含 `combat_feed_no_ownership_true_frames`，说明字段存在但样本没有命中我方击杀/死亡。两种情况都不能关闭 kill/death identity 验证项。若 `coverage_gaps` 含 `no_manual_identity_frames`，说明当前样本没有 `combat.self.source=manual`，不能关闭手动 `/api/identity` 接缝验证。若 `coverage_gaps` 含 `no_awards_items`、`no_overspeed_critical_flags`、`no_oil_overheat_notice_codes`、`no_powertrain_failure_notice_codes` 或 `hud_notice_severity_unknown`，说明当前样本还不能验证 awards、超速 critical、油温 notice、动力故障 notice 或 notice warning/critical 档位。
 
@@ -186,7 +201,7 @@
    Hosted UI 面板点击“清除玩家名”
    ```
 
-   预期：设置后 `combat.self.source=manual`，`combat.player_name` 等于面板输入昵称；`combat.feed[]` 的 `is_my_kill` / `is_my_death` 能围绕该昵称生效。2026-06-23 已观察到该正向路径，并已确认 `you_killed` post-fix dry_run / push 输出。active players 点选自己仍可作为后续 UI 增强。
+   预期：设置后 `combat.self.source=manual`，`combat.player_name` 等于面板输入昵称；`combat.feed[]` 的 `is_my_kill` / `is_my_death` 能围绕该昵称生效。2026-06-23 已观察到该正向路径，并已确认 `you_killed` post-fix dry_run / push 输出。面板可从安全化 active players 候选点选自己；不安全候选不应暴露 raw 名字。
 
 5. replay seam：
 
@@ -219,7 +234,7 @@
 
 - 数值安全事件接缝已在 dry_run 下通过。
 - T-Safety 已完成；generic kill/death 已通过真机 dry_run 与真实 push。hudmsg / awards / 其他 free-text 还需要真机 dry_run 验证后，才允许测试真实播报。
-- T-Output 已完成；真实开口测试时应观察 `dispatcher_suppressed / output_backpressure` 是否减少旧事件晚回复和多条消息堆积，同时确认更高优先级事件仍能通过。`tools/live_monitor.py` 的 Summary / Observe 摘要会直接显示 `output_backpressure`，并保留 `kill_coalesced` 决策原因。
+- T-Output 已完成；真实开口测试时应观察 `dispatcher_suppressed / output_backpressure` 是否减少旧事件晚回复和多条消息堆积，同时确认更高优先级事件仍能通过。真实战场事件 push 会带 `coalesce_key=neko_warthunder:battle_event`，应能让宿主队列中尚未释放的旧低空/超速 cue 被死亡/critical 等新事件替换。超过 `output_event_max_age_seconds` 的旧事件会记录为 `dispatcher_suppressed / event_expired` 且不真实 push。`tools/live_monitor.py` 的 Summary / Observe 摘要会直接显示 `output_backpressure` / `event_expired`，并保留 `kill_coalesced` 决策原因。
 - T-Kill-Coalesce 已完成；多杀 / 连杀测试时应观察 `you_killed` 是否合并为 `kill_count` 单条输出，并确认 `you_died` / critical 安全事件仍可抢占。
 
 步骤：
@@ -232,4 +247,5 @@
 ## 暂缓项
 
 - recovery 继续暂缓。不要因为数据层 v1.6 合并就提前实现。
-- T3/L8 子进程编排后置，等数据层启动方式和真机接缝更明确后再做。
+- L8 子进程最小编排已完成且已本地自验证。2026-06-26 确认插件托管启动时 `data_layer.mode=managed` 且插件 stop 会关掉该 `8112`；手动预先启动 `8112` 时 `data_layer.mode=external` 且插件 stop 不会误杀。
+- 2026-06-25 已修正本地运行副本边界：`N.E.K.O\plugin\plugins\neko_warthunder` 改为指向独立插件仓库的 junction。复测确认宿主启动、`/plugins/refresh`、`/plugin/neko_warthunder/start`、Hosted UI context、`set_dry_run` / `pause` / `resume` / `test_say` 均可用；`dry_run=true` 下 `test_say` 正确返回 `pushed=false, blocked="dry_run"`。

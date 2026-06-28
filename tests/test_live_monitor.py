@@ -170,6 +170,51 @@ def _fake_idle_fetcher(url: str):
     raise AssertionError(url)
 
 
+def _fake_deferred_notice_fetcher(url: str):
+    if url.endswith(":48911/health"):
+        return {"ok": True}
+    if url.endswith(":48916/health"):
+        return {"ok": True}
+    if url.endswith(":8112/health"):
+        return {"ok": True}
+    if "/hosted-ui/context" in url:
+        return {
+            "state": {
+                "dry_run": True,
+                "connected": True,
+                "conn_state": "in_battle",
+                "in_battle": True,
+                "domain": "air",
+                "scenario": "IN_FLIGHT",
+                "level": "critical",
+                "safety": {"status": "running", "manual_paused": False, "auto_paused": False, "failures": 0},
+                "observe": {
+                    "last_event": {"event_id": "powertrain_failure", "level": "critical"},
+                    "last_decision": {
+                        "event_id": "powertrain_failure",
+                        "stage": "detector_suppressed",
+                        "outcome": "suppressed",
+                        "reason": "deferred_hud_notice",
+                        "scenario": "IN_FLIGHT",
+                        "dry_run": True,
+                    },
+                    "last_output_status": None,
+                },
+            }
+        }
+    if url.endswith(":8112/api/telemetry"):
+        return {
+            "state": "in_battle",
+            "replay": False,
+            "in_battle": True,
+            "domain": "air",
+            "vehicle": {"valid": True},
+            "processed": {"level": "critical", "flags": {}},
+            "hud_notices": {"feed": [{"id": 42, "code": "powertrain_failure", "text": "raw failure text"}]},
+        }
+    raise AssertionError(url)
+
+
 def _fake_backpressure_fetcher(url: str):
     if url.endswith(":48911/health"):
         return {"ok": True}
@@ -215,6 +260,56 @@ def _fake_backpressure_fetcher(url: str):
             "domain": "ground",
             "vehicle": {"valid": True},
             "processed": {"level": "warning", "flags": {}},
+            "combat": {"feed": []},
+        }
+    raise AssertionError(url)
+
+
+def _fake_expired_output_fetcher(url: str):
+    if url.endswith(":48911/health"):
+        return {"ok": True}
+    if url.endswith(":48916/health"):
+        return {"ok": True}
+    if url.endswith(":8112/health"):
+        return {"ok": True}
+    if "/hosted-ui/context" in url:
+        return {
+            "state": {
+                "dry_run": False,
+                "connected": True,
+                "conn_state": "in_battle",
+                "in_battle": True,
+                "domain": "air",
+                "scenario": "IN_FLIGHT",
+                "level": "warning",
+                "safety": {"status": "running", "manual_paused": False, "auto_paused": False, "failures": 0},
+                "observe": {
+                    "last_event": {"event_id": "overspeed", "edge": "enter", "level": "warning"},
+                    "last_decision": {
+                        "event_id": "overspeed",
+                        "stage": "arbiter_allowed",
+                        "outcome": "allowed",
+                        "reason": "selected",
+                        "scenario": "IN_FLIGHT",
+                        "dry_run": False,
+                    },
+                    "last_output_status": {
+                        "event_id": "overspeed",
+                        "stage": "dispatcher_suppressed",
+                        "outcome": "dropped",
+                        "reason": "event_expired",
+                    },
+                },
+            }
+        }
+    if url.endswith(":8112/api/telemetry"):
+        return {
+            "state": "in_battle",
+            "replay": False,
+            "in_battle": True,
+            "domain": "air",
+            "vehicle": {"valid": True},
+            "processed": {"level": "warning", "flags": {"overspeed_warn": True}},
             "combat": {"feed": []},
         }
     raise AssertionError(url)
@@ -292,6 +387,8 @@ def test_live_monitor_render_text_is_short_and_actionable():
     assert "awards=1/blocked" in text
     assert "combat_feed=1/blocked" in text
     assert "hud_notices=1/blocked" in text
+    assert "Decision detail: selected=Arbiter 已放行此事件" in text
+    assert "Output detail: dry_run_enabled=dry_run 开启，仅模拟不真实开口" in text
     assert "action_failed=1" in text
     assert "dry_run=1" in text
     assert "需要处理：存在 action failed / Traceback / ERROR / TTS 异常" in text
@@ -307,6 +404,17 @@ def test_live_monitor_summary_does_not_call_idle_no_output_blocked():
     assert "Summary: health=ok, battle=not_in_battle/OUT_OF_BATTLE, free_text=clear, replay=clear, output=-, issues=none" in text
 
 
+def test_live_monitor_explains_deferred_hud_notice_without_raw_text():
+    from neko_warthunder.tools.live_monitor import monitor_once, render_text_report
+
+    report = monitor_once(fetcher=_fake_deferred_notice_fetcher, log_reader=lambda _paths: [])
+    text = render_text_report(report)
+
+    assert "decision=detector_suppressed/suppressed/deferred_hud_notice" in text
+    assert "Decision detail: deferred_hud_notice=HUD 技术通知已识别，当前策略暂不播报" in text
+    assert "raw failure text" not in text
+
+
 def test_live_monitor_summary_includes_actionable_output_reason():
     from neko_warthunder.tools.live_monitor import monitor_once, render_text_report
 
@@ -315,6 +423,18 @@ def test_live_monitor_summary_includes_actionable_output_reason():
 
     assert "output=dispatcher_suppressed/dropped(output_backpressure)" in text
     assert "decision=arbiter_allowed/allowed/kill_coalesced" in text
+    assert "Decision detail: kill_coalesced=多次击杀已合并" in text
+    assert "Output detail: output_backpressure=输出背压中，同级或低优先级提示被压住" in text
+
+
+def test_live_monitor_summary_includes_expired_output_reason():
+    from neko_warthunder.tools.live_monitor import monitor_once, render_text_report
+
+    report = monitor_once(fetcher=_fake_expired_output_fetcher, log_reader=lambda _paths: [])
+    text = render_text_report(report)
+
+    assert "output=dispatcher_suppressed/dropped(event_expired)" in text
+    assert "Output detail: event_expired=旧战场事件已过期，真实开口前丢弃" in text
 
 
 def test_live_monitor_marks_replay_true_as_suppressed_when_observe_matches():

@@ -122,6 +122,36 @@ def test_overspeed_warn_and_critical_flags_emit_events():
     assert events[0].level == "critical"
 
 
+def test_low_alt_payload_carries_radio_altitude_for_agl_context():
+    engine = DetectorEngine(list(build_condition_detectors()))
+    prev = C.BattleState(in_battle=True, vehicle_valid=True)
+
+    low_1 = C.BattleState(
+        in_battle=True,
+        vehicle_valid=True,
+        flags={"altitude_critical": True},
+        altitude_m=1067.0,
+        radio_altitude_m=8.0,
+        climb_ms=-3.0,
+    )
+    low_2 = C.BattleState(
+        in_battle=True,
+        vehicle_valid=True,
+        flags={"altitude_critical": True},
+        altitude_m=1060.0,
+        radio_altitude_m=7.0,
+        climb_ms=-4.0,
+    )
+
+    assert engine.feed(prev, low_1) == []
+    events = engine.feed(low_1, low_2)
+
+    assert len(events) == 1
+    assert events[0].event_id == "low_alt_danger"
+    assert events[0].payload["radio_altitude_m"] == 7.0
+    assert events[0].payload["altitude_m"] == 1060.0
+
+
 def test_aoa_flags_do_not_emit_stall_risk():
     engine = DetectorEngine(list(build_condition_detectors()))
     prev = C.BattleState(in_battle=True, vehicle_valid=True)
@@ -141,6 +171,16 @@ def test_kill_detector_uses_is_my_kill_flag():
     ev = det.feed(C.BattleState(), cur)
     assert ev is not None and ev.event_id == "you_killed"
     assert ev.payload.get("victim") == "Target"
+
+
+def test_kill_detector_carries_domain_for_output_wording():
+    det = KillDetector("Me")
+    feed = {"feed": [{"id": 12, "is_my_kill": True, "victim": "Target", "victim_vehicle": "Tank"}]}
+    cur = C.BattleState(in_battle=True, vehicle_valid=True, domain="ground", combat=feed)
+
+    ev = det.feed(C.BattleState(), cur)
+
+    assert ev is not None and ev.payload.get("domain") == "ground"
 
 
 def test_death_detector_uses_is_my_death_flag():
@@ -163,6 +203,16 @@ def test_death_detector_uses_is_my_death_flag():
     assert ev is not None and ev.event_id == "you_died"
     assert ev.payload.get("killer_name") == "Opponent"
     assert ev.payload.get("cause") == "shot_down"
+
+
+def test_death_detector_carries_domain_for_output_wording():
+    det = DeathDetector()
+    feed = {"feed": [{"id": 22, "is_my_death": True, "killer": "Opponent", "action": "destroyed"}]}
+    cur = C.BattleState(in_battle=True, vehicle_valid=False, domain="ground", combat=feed)
+
+    ev = det.feed(C.BattleState(in_battle=True, vehicle_valid=True), cur)
+
+    assert ev is not None and ev.payload.get("domain") == "ground"
 
 
 def test_vehicle_valid_drop_is_not_death_signal():
@@ -235,6 +285,47 @@ def test_hud_notice_powertrain_failure_is_not_promoted_to_speech_event_yet():
         hud_notices=[{"id": 8, "code": "powertrain_failure", "severity": "critical", "text": "动力系统故障"}],
     )
     assert det.feed(C.BattleState(in_battle=True, vehicle_valid=True), cur) is None
+
+
+def test_dead_state_suppresses_overheat_candidates():
+    engine = DetectorEngine(list(build_condition_detectors()) + [HudNoticeDetector()])
+    prev = C.BattleState(in_battle=True, vehicle_valid=True)
+    dead = C.BattleState(
+        in_battle=True,
+        vehicle_valid=True,
+        dead=True,
+        flags={"engine_overheat_critical": True},
+        hud_notices=[{"id": 11, "code": "engine_overheat", "severity": "critical", "text": "raw overheat"}],
+    )
+
+    assert engine.feed(prev, dead) == []
+    assert engine.feed(dead, dead) == []
+
+
+def test_dead_state_allows_death_event_and_blocks_overheat_same_tick():
+    engine = DetectorEngine(list(build_condition_detectors()) + [DeathDetector(), HudNoticeDetector()])
+    prev = C.BattleState(in_battle=True, vehicle_valid=True)
+    dead = C.BattleState(
+        in_battle=True,
+        vehicle_valid=True,
+        dead=True,
+        flags={"engine_overheat_critical": True},
+        combat={"feed": [{"id": 30, "is_my_death": True, "killer": "Opponent", "action": "crashed"}]},
+        hud_notices=[{"id": 12, "code": "engine_overheat", "severity": "critical", "text": "raw overheat"}],
+    )
+
+    events = engine.feed(prev, dead)
+
+    assert [ev.event_id for ev in events] == ["you_died"]
+    assert events[0].payload.get("cause") == "crashed"
+
+
+def test_spawn_detector_ignores_dead_state_with_stale_vehicle_valid():
+    det = SpawnDetector()
+    prev = C.BattleState(connected=True, in_battle=True, vehicle_valid=False, dead=True)
+    cur = C.BattleState(connected=True, in_battle=True, vehicle_valid=True, dead=True, vehicle_type="bf-109f-4")
+
+    assert det.feed(prev, cur) is None
 
 
 def test_hud_notice_overheat_requires_live_vehicle():

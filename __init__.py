@@ -9,6 +9,7 @@ M2 接入 Scenario(D-B1) / Detector(D-B3) / Arbiter(D-B4) 后才真正产出事�
 
 from __future__ import annotations
 
+from pathlib import Path
 import threading
 import time
 from typing import Any
@@ -24,6 +25,7 @@ from plugin.sdk.plugin import (
     SdkError,
 )
 
+from .adapters.data_layer_process import DataLayerProcessManager
 from .adapters.identity_client import identity_summary_from_combat, set_identity as request_set_identity
 from .adapters.neko_dispatcher import NekoDispatcher
 from .adapters.runtime_timeline import RuntimeTimeline, arbiter_chain_to_observe_records
@@ -38,6 +40,7 @@ from .detectors.condition.flight_safety import build_condition_detectors
 from .detectors.discrete.lifecycle import build_discrete_detectors
 
 _CONFIG_SECTION = "neko_warthunder"
+_DEFERRED_HUD_NOTICE_CODES = frozenset({"powertrain_failure"})
 
 
 @neko_plugin
@@ -50,6 +53,7 @@ class NekoWarthunderPlugin(NekoPluginBase):
             self.logger = ctx.logger
 
         self.cfg = WtConfig()
+        self.data_layer_manager = DataLayerProcessManager(self.cfg, plugin_root=Path(__file__).resolve().parent)
         self.client = TelemetryClient(self.cfg.data_layer_url, self.cfg.http_timeout_seconds)
         self.safety = SafetyGuard(self.cfg)
         self.timeline = RuntimeTimeline(
@@ -70,6 +74,8 @@ class NekoWarthunderPlugin(NekoPluginBase):
         self._status_report_min_interval_seconds = 2.0
         self._last_status_report_at = 0.0
         self._last_status_report_snapshot: dict[str, Any] | None = None
+        self._deferred_hud_notice_ids: set[int] = set()
+        self._takeoff_radio_altitude_grace_active = False
 
     # ------------------------------------------------------------------ 配置
     async def _reload_config(self) -> None:
@@ -85,6 +91,7 @@ class NekoWarthunderPlugin(NekoPluginBase):
     def _apply_config(self, cfg: WtConfig) -> None:
         prev_player = self.cfg.player_name
         self.cfg = cfg
+        self.data_layer_manager.configure(cfg)
         self.client = TelemetryClient(cfg.data_layer_url, cfg.http_timeout_seconds)
         self.safety.update(cfg)
         self.timeline.configure(
@@ -105,24 +112,29 @@ class NekoWarthunderPlugin(NekoPluginBase):
     @lifecycle(id="startup")
     async def startup(self, **_):
         await self._reload_config()
+        data_layer_status = self.data_layer_manager.start_if_needed()
         self.dispatcher.push_context(WT_CONTEXT_INSTRUCTIONS)
         self._instructions_injected = True
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True, name="wt-poll")
         self._thread.start()
-        self.logger.info(f"neko_warthunder started (dry_run={self.cfg.dry_run}, url={self.cfg.data_layer_url})")
-        return Ok({"status": "running", "dry_run": self.cfg.dry_run})
+        self.logger.info(
+            f"neko_warthunder started (dry_run={self.cfg.dry_run}, url={self.cfg.data_layer_url}, "
+            f"data_layer={data_layer_status.get('mode')})"
+        )
+        return Ok({"status": "running", "dry_run": self.cfg.dry_run, "data_layer": data_layer_status})
 
     @lifecycle(id="shutdown")
     def shutdown(self, **_):
         self._stop.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=3.0)
+        data_layer_status = self.data_layer_manager.stop()
         if self._instructions_injected:
             self.dispatcher.push_context(WT_RESTORE_INSTRUCTIONS)
             self._instructions_injected = False
         self.logger.info("neko_warthunder shutdown")
-        return Ok({"status": "shutdown"})
+        return Ok({"status": "shutdown", "data_layer": data_layer_status})
 
     @lifecycle(id="config_change")
     async def on_config_change(self, **_):
@@ -176,6 +188,8 @@ class NekoWarthunderPlugin(NekoPluginBase):
                 dry_run=self.cfg.dry_run,
             )
             return
+        self._record_deferred_hud_notices(cur)
+        candidates = self._suppress_takeoff_grace(candidates, cur, now)
         for candidate in candidates:
             self.timeline.record_stage(
                 stage="detector_candidate",
@@ -212,6 +226,123 @@ class NekoWarthunderPlugin(NekoPluginBase):
                 self.logger.warning(f"dispatch failed: {type(exc).__name__}: {exc}")
                 self.safety.record_failure(now)
 
+    def _record_deferred_hud_notices(self, cur: BattleState) -> None:
+        if not (cur.in_battle and cur.vehicle_valid and not cur.dead):
+            return
+        seen_ids = getattr(self, "_deferred_hud_notice_ids", None)
+        if seen_ids is None:
+            seen_ids = set()
+            self._deferred_hud_notice_ids = seen_ids
+
+        for item in cur.hud_notices:
+            if not isinstance(item, dict):
+                continue
+            code = str(item.get("code") or "")
+            if code not in _DEFERRED_HUD_NOTICE_CODES:
+                continue
+            try:
+                notice_id = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if notice_id in seen_ids:
+                continue
+            seen_ids.add(notice_id)
+            level = "critical" if str(item.get("level") or item.get("severity") or "").lower() == "critical" else "warning"
+            self.timeline.record_stage(
+                stage="detector_suppressed",
+                outcome="suppressed",
+                reason="deferred_hud_notice",
+                event_id=code,
+                level=level,
+                scenario=cur.scenario,
+                in_battle=cur.in_battle,
+                replay=cur.replay,
+                dry_run=self.cfg.dry_run,
+                safe_summary=f"hud_notice/{code}/deferred",
+            )
+            self.timeline.record_decision(
+                event_id=code,
+                stage="detector_suppressed",
+                outcome="suppressed",
+                reason="deferred_hud_notice",
+                scenario=cur.scenario,
+                safety_status=self.safety.status(),
+                dry_run=self.cfg.dry_run,
+            )
+
+    def _takeoff_radio_altitude_grace_active_for(self, cur: BattleState, now: float) -> bool:
+        radio_alt = cur.radio_altitude_m
+        if radio_alt is None or not cur.in_battle or not cur.vehicle_valid or cur.dead:
+            self._takeoff_radio_altitude_grace_active = False
+            return False
+
+        enter_m = float(getattr(self.cfg, "takeoff_radio_altitude_enter_m", 10.0) or 0.0)
+        exit_m = float(getattr(self.cfg, "takeoff_radio_altitude_exit_m", 40.0) or 0.0)
+        if exit_m < enter_m:
+            exit_m = enter_m
+
+        active = bool(getattr(self, "_takeoff_radio_altitude_grace_active", False))
+        if active:
+            if radio_alt >= exit_m:
+                self._takeoff_radio_altitude_grace_active = False
+            return self._takeoff_radio_altitude_grace_active
+
+        grace = float(getattr(self.cfg, "takeoff_low_alt_grace_seconds", 0.0) or 0.0)
+        elapsed = self.resolver.seconds_since_spawn(now)
+        if grace > 0 and elapsed is not None and elapsed < grace and radio_alt <= enter_m:
+            self._takeoff_radio_altitude_grace_active = True
+        return self._takeoff_radio_altitude_grace_active
+
+    def _suppress_takeoff_grace(
+        self,
+        candidates: list[BattleEvent],
+        cur: BattleState,
+        now: float,
+    ) -> list[BattleEvent]:
+        grace = float(getattr(self.cfg, "takeoff_low_alt_grace_seconds", 0.0) or 0.0)
+        radio_grace_active = self._takeoff_radio_altitude_grace_active_for(cur, now)
+        if grace <= 0 and not radio_grace_active:
+            return candidates
+        if not cur.in_battle or not cur.vehicle_valid or cur.dead:
+            return candidates
+        elapsed = self.resolver.seconds_since_spawn(now)
+        time_grace_active = elapsed is not None and elapsed < grace
+        if not time_grace_active and not radio_grace_active:
+            return candidates
+
+        kept: list[BattleEvent] = []
+        for candidate in candidates:
+            suppress_low_alt = candidate.event_id == "low_alt_danger" and (time_grace_active or radio_grace_active)
+            suppress_overspeed = candidate.event_id == "overspeed" and radio_grace_active
+            if not (suppress_low_alt or suppress_overspeed):
+                kept.append(candidate)
+                continue
+            reason = "takeoff_low_alt_grace" if suppress_low_alt else "takeoff_radio_altitude_grace"
+            self.timeline.record_stage(
+                stage="detector_suppressed",
+                outcome="suppressed",
+                reason=reason,
+                event_id=candidate.event_id,
+                edge=candidate.edge,
+                level=candidate.level,
+                priority=candidate.priority,
+                scenario=cur.scenario,
+                in_battle=cur.in_battle,
+                replay=cur.replay,
+                dry_run=self.cfg.dry_run,
+                safe_summary=f"{candidate.event_id}/{candidate.edge}/{candidate.level}",
+            )
+            self.timeline.record_decision(
+                event_id=candidate.event_id,
+                stage="detector_suppressed",
+                outcome="suppressed",
+                reason=reason,
+                scenario=cur.scenario,
+                safety_status=self.safety.status(),
+                dry_run=self.cfg.dry_run,
+            )
+        return kept
+
     def _status_report_snapshot(self, s: BattleState) -> dict[str, Any]:
         return {
             "connected": s.connected,
@@ -241,11 +372,33 @@ class NekoWarthunderPlugin(NekoPluginBase):
             self._last_status_report_at = now
             pass
 
-    # -------------------------------------------------------------- Hosted UI
-    @ui.context(id="dashboard", title="战雷猫娘副驾驶")
-    async def dashboard_context(self):
-        with self._state_lock:
-            s = self.state
+    def _telemetry_snapshot(self, s: BattleState) -> dict[str, Any]:
+        return {
+            "age_seconds": s.age_seconds,
+            "ias_kmh": s.ias_kmh,
+            "mach": s.mach,
+            "altitude_m": s.altitude_m,
+            "radio_altitude_m": s.radio_altitude_m,
+            "climb_ms": s.climb_ms,
+            "fuel_fraction": s.fuel_fraction,
+            "level": s.level,
+            "flags": dict(sorted((s.flags or {}).items())),
+        }
+
+    def _takeoff_protection_snapshot(self, s: BattleState) -> dict[str, Any]:
+        radio_altitude_m = s.radio_altitude_m
+        active = bool(getattr(self, "_takeoff_radio_altitude_grace_active", False))
+        return {
+            "active": active,
+            "radio_altitude_m": radio_altitude_m,
+            "radio_altitude_available": radio_altitude_m is not None,
+            "enter_m": self.cfg.takeoff_radio_altitude_enter_m,
+            "exit_m": self.cfg.takeoff_radio_altitude_exit_m,
+            "low_alt_grace_seconds": self.cfg.takeoff_low_alt_grace_seconds,
+            "suppresses": ["low_alt_danger", "overspeed"] if active else [],
+        }
+
+    def _dashboard_payload(self, s: BattleState) -> dict[str, Any]:
         return {
             "enabled": self.cfg.enabled,
             "dry_run": self.cfg.dry_run,
@@ -262,9 +415,19 @@ class NekoWarthunderPlugin(NekoPluginBase):
             "scenario": s.scenario,
             "level": s.level,
             "identity": identity_summary_from_combat(s.combat),
+            "data_layer": self.data_layer_manager.snapshot(),
+            "telemetry": self._telemetry_snapshot(s),
+            "takeoff_protection": self._takeoff_protection_snapshot(s),
             "safety": self.safety.snapshot(),
             "observe": self.timeline.snapshot(),
         }
+
+    # -------------------------------------------------------------- Hosted UI
+    @ui.context(id="dashboard", title="战雷猫娘副驾驶")
+    async def dashboard_context(self):
+        with self._state_lock:
+            s = self.state
+        return self._dashboard_payload(s)
 
     # ------------------------------------------------------------------ 动作
     @ui.action(id="set_dry_run", label="设置 dry_run", tone="primary", group="runtime", order=10, refresh_context=True)
@@ -391,22 +554,4 @@ class NekoWarthunderPlugin(NekoPluginBase):
     def status(self, **_):
         with self._state_lock:
             s = self.state
-        return Ok({
-            "enabled": self.cfg.enabled,
-            "dry_run": self.cfg.dry_run,
-            "connected": s.connected,
-            "conn_state": s.conn_state,
-            "in_battle": s.in_battle,
-            "dead": s.dead,
-            "domain": s.domain,
-            "domain_label": s.domain_label,
-            "vehicle_type": s.vehicle_type,
-            "profile_matched": s.profile_matched,
-            "profile_source": s.profile_source,
-            "profile_family": s.profile_family,
-            "scenario": s.scenario,
-            "level": s.level,
-            "identity": identity_summary_from_combat(s.combat),
-            "safety": self.safety.snapshot(),
-            "observe": self.timeline.snapshot(),
-        })
+        return Ok(self._dashboard_payload(s))

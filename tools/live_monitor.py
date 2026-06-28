@@ -158,6 +158,8 @@ def render_text_report(report: dict[str, Any]) -> str:
             outcome2=output.get("outcome") or "-",
             reason2=output.get("reason") or "-",
         ),
+        f"Decision detail: {_format_reason_detail(decision.get('reason'), kind='decision')}",
+        f"Output detail: {_format_reason_detail(output.get('reason'), kind='output')}",
         "Logs: action_failed={action_failed}, traceback={traceback}, error={error}, dry_run={dry_run}, pushed={pushed}, tts={tts}".format(
             action_failed=logs.get("PLUGIN_UI_ACTION_FAILED", 0),
             traceback=logs.get("Traceback", 0),
@@ -428,9 +430,30 @@ def _format_output_summary(output: dict[str, Any]) -> str:
         return "-"
     text = f"{output.get('stage') or '-'}/{output.get('outcome') or '-'}"
     reason = output.get("reason")
-    if reason in {"output_backpressure"}:
+    if reason in {"event_expired", "output_backpressure"}:
         text += f"({reason})"
     return text
+
+
+def _format_reason_detail(reason: Any, *, kind: str) -> str:
+    if not reason:
+        return "-"
+    text = str(reason)
+    explanations = {
+        "selected": "Arbiter 已放行此事件",
+        "kill_coalesced": "多次击杀已合并",
+        "dry_run_enabled": "dry_run 开启，仅模拟不真实开口",
+        "event_expired": "旧战场事件已过期，真实开口前丢弃",
+        "output_backpressure": "输出背压中，同级或低优先级提示被压住",
+        "manual_pause": "手动暂停中，输出被压住",
+        "scenario_gated": "当前场景不允许播这个事件",
+        "cooldown": "冷却中，避免重复播报",
+        "rate_limit": "全局限流中，输出被延后或压住",
+        "replay": "回放数据已静默",
+        "deferred_hud_notice": "HUD 技术通知已识别，当前策略暂不播报",
+    }
+    fallback = "已记录决策" if kind == "decision" else "已记录输出状态"
+    return f"{text}={explanations.get(text, fallback)}"
 
 
 def _format_issue_summary(logs: dict[str, int]) -> str:

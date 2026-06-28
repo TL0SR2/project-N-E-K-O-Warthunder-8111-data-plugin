@@ -60,6 +60,14 @@ def build_checks(
                 ],
             )
         )
+    checks.append(
+        Check(
+            "runtime smoke",
+            plugin,
+            ["uv", "run", "python", "tools/live_monitor.py", "--count", "1"],
+            "dry_run / paused / Hosted UI / 8112 ownership / duplicate plugin scan risk",
+        )
+    )
     checks.append(Check("synthetic replay", plugin, ["uv", "run", "python", "tools/replay.py"]))
     if sample.exists():
         checks.append(
@@ -102,6 +110,12 @@ def _format_cmd(check: Check) -> str:
 
 def print_plan(checks: Sequence[Check]) -> None:
     print("# neko_warthunder offline preflight")
+    print("## Quick read")
+    print("- baseline: logic self-check should report 158/158 passed")
+    print("- watch live_monitor Summary first for health, dry_run, Hosted UI, 8112, and output reasons")
+    print("- if this passes: keep dry_run=true and follow the live test plan")
+    print("- if this fails: stop before real-machine testing and fix the failed check")
+    print("\n## Checks")
     for index, check in enumerate(checks, start=1):
         print(f"{index}. {check.name}")
         print(f"   cwd: {check.cwd}")
@@ -119,8 +133,10 @@ def run_checks(checks: Sequence[Check]) -> int:
         completed = subprocess.run(check.cmd, cwd=check.cwd)
         if completed.returncode != 0:
             print(f"FAILED: {check.name} exited with {completed.returncode}")
+            print("stop before real-machine testing; fix this check first")
             return completed.returncode
-    print("\npreflight passed")
+    print("\npreflight passed: ready for dry_run live validation")
+    print("keep dry_run=true, then follow tools/live_test_plan.py and watch live_monitor Summary first")
     return 0
 
 
